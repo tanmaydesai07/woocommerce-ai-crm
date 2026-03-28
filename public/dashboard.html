@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard - CRM WooCommerce</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <!-- Navigation -->
+  <nav class="bg-blue-600 text-white p-4 flex justify-between items-center">
+    <h1 class="text-xl font-bold">CRM - WooCommerce</h1>
+    <div>
+      <span id="roleBadge" class="bg-blue-800 px-3 py-1 rounded text-sm mr-3"></span>
+      <button onclick="logout()" class="bg-white text-blue-600 px-4 py-1 rounded">Logout</button>
+    </div>
+  </nav>
+
+  <div class="max-w-6xl mx-auto p-6">
+    <!-- Stats Cards -->
+    <div id="statsSection" class="grid grid-cols-4 gap-4 mb-6">
+      <div class="bg-white p-4 rounded shadow text-center">
+        <p class="text-2xl font-bold text-blue-600" id="statCustomers">0</p>
+        <p class="text-gray-500">Customers</p>
+      </div>
+      <div class="bg-white p-4 rounded shadow text-center">
+        <p class="text-2xl font-bold text-green-600" id="statOrders">0</p>
+        <p class="text-gray-500">Orders</p>
+      </div>
+      <div class="bg-white p-4 rounded shadow text-center">
+        <p class="text-2xl font-bold text-yellow-600" id="statPending">0</p>
+        <p class="text-gray-500">Pending Orders</p>
+      </div>
+      <div class="bg-white p-4 rounded shadow text-center">
+        <p class="text-2xl font-bold text-purple-600" id="statComms">0</p>
+        <p class="text-gray-500">Communications</p>
+      </div>
+    </div>
+
+    <!-- WooCommerce Sync Section (Admin Only) -->
+    <div id="wooSyncSection" class="bg-white p-4 rounded shadow mb-6 hidden">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="font-bold">WooCommerce Integration</h3>
+        <span id="wooStatus" class="text-sm px-3 py-1 rounded bg-gray-100">Checking...</span>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="syncCustomers()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+          Sync Customers
+        </button>
+        <button onclick="syncOrders()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+          Sync Orders
+        </button>
+        <button onclick="checkWooStatus()" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+          Check Connection
+        </button>
+      </div>
+      <p id="syncMessage" class="text-sm text-gray-500 mt-2"></p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex mb-4">
+      <button onclick="showTab('customers')" id="tabCustomers" class="px-4 py-2 bg-blue-500 text-white rounded-l">Customers</button>
+      <button onclick="showTab('orders')" id="tabOrders" class="px-4 py-2 bg-gray-300 text-gray-700">Orders</button>
+      <button onclick="showTab('communications')" id="tabComms" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-r">Communications</button>
+    </div>
+
+    <!-- Customers Section -->
+    <div id="customersSection">
+      <div id="addCustomerForm" class="bg-white p-4 rounded shadow mb-4 hidden">
+        <h3 class="font-bold mb-3">Add Customer</h3>
+        <div class="grid grid-cols-2 gap-2">
+          <input type="text" id="custFirstName" placeholder="First Name" class="p-2 border rounded" required>
+          <input type="text" id="custLastName" placeholder="Last Name" class="p-2 border rounded" required>
+          <input type="email" id="custEmail" placeholder="Email" class="p-2 border rounded" required>
+          <input type="text" id="custPhone" placeholder="Phone" class="p-2 border rounded">
+          <input type="text" id="custCompany" placeholder="Company" class="p-2 border rounded">
+          <input type="text" id="custAddress" placeholder="Address" class="p-2 border rounded">
+          <select id="custStatus" class="p-2 border rounded">
+            <option value="lead">Lead</option>
+            <option value="prospect">Prospect</option>
+            <option value="customer">Customer</option>
+            <option value="inactive">Inactive</option>
+          </select>
+          <input type="text" id="custAssignedTo" placeholder="Assigned To" class="p-2 border rounded">
+        </div>
+        <button onclick="addCustomer()" class="bg-blue-500 text-white px-4 py-2 rounded mt-3">Add Customer</button>
+      </div>
+      <ul id="customerList"></ul>
+    </div>
+
+    <!-- Orders Section -->
+    <div id="ordersSection" class="hidden">
+      <div id="addOrderForm" class="bg-white p-4 rounded shadow mb-4 hidden">
+        <h3 class="font-bold mb-3">Add Order</h3>
+        <div class="grid grid-cols-2 gap-2">
+          <select id="orderCustomer" class="p-2 border rounded"><option value="">Select Customer</option></select>
+          <input type="text" id="orderNumber" placeholder="Order Number" class="p-2 border rounded" required>
+          <input type="number" id="orderTotal" placeholder="Total Amount" class="p-2 border rounded" required>
+          <select id="orderStatus" class="p-2 border rounded">
+            <option value="pending">Pending</option>
+            <option value="processing">Processing</option>
+            <option value="shipped">Shipped</option>
+            <option value="delivered">Delivered</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <select id="orderPayment" class="p-2 border rounded">
+            <option value="pending">Payment Pending</option>
+            <option value="paid">Paid</option>
+            <option value="refunded">Refunded</option>
+            <option value="failed">Failed</option>
+          </select>
+          <input type="text" id="orderShipping" placeholder="Shipping Address" class="p-2 border rounded">
+        </div>
+        <textarea id="orderNotes" placeholder="Notes" class="w-full p-2 border rounded mt-2"></textarea>
+        <button onclick="addOrder()" class="bg-blue-500 text-white px-4 py-2 rounded mt-3">Add Order</button>
+      </div>
+      <ul id="orderList"></ul>
+    </div>
+
+    <!-- Communications Section -->
+    <div id="communicationsSection" class="hidden">
+      <div id="addCommForm" class="bg-white p-4 rounded shadow mb-4">
+        <h3 class="font-bold mb-3">Add Communication</h3>
+        <div class="grid grid-cols-2 gap-2">
+          <select id="commCustomer" class="p-2 border rounded"><option value="">Select Customer</option></select>
+          <select id="commType" class="p-2 border rounded">
+            <option value="call">Call</option>
+            <option value="email">Email</option>
+            <option value="meeting">Meeting</option>
+            <option value="note">Note</option>
+            <option value="support">Support</option>
+          </select>
+          <input type="text" id="commSubject" placeholder="Subject" class="p-2 border rounded" required>
+          <input type="date" id="commFollowUp" placeholder="Follow-up Date" class="p-2 border rounded">
+          <select id="commStatus" class="p-2 border rounded">
+            <option value="open">Open</option>
+            <option value="follow-up">Follow-up</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+        <textarea id="commNotes" placeholder="Notes" class="w-full p-2 border rounded mt-2" required></textarea>
+        <button onclick="addCommunication()" class="bg-blue-500 text-white px-4 py-2 rounded mt-3">Add Communication</button>
+      </div>
+      <ul id="commList"></ul>
+    </div>
+  </div>
+
+  <script>
+    let currentRole = '';
+
+    // Initialize
+    async function init() {
+      try {
+        const res = await axios.get('/api/me');
+        currentRole = res.data.role;
+        document.getElementById('roleBadge').textContent = currentRole.toUpperCase();
+        if (currentRole === 'admin') {
+          document.getElementById('addCustomerForm').classList.remove('hidden');
+          document.getElementById('addOrderForm').classList.remove('hidden');
+          document.getElementById('wooSyncSection').classList.remove('hidden');
+          checkWooStatus();
+        }
+        loadStats();
+        loadCustomers();
+        loadOrders();
+        loadCommunications();
+      } catch {
+        window.location.href = '/';
+      }
+    }
+
+    // Load Stats
+    async function loadStats() {
+      try {
+        const res = await axios.get('/api/stats');
+        document.getElementById('statCustomers').textContent = res.data.totalCustomers;
+        document.getElementById('statOrders').textContent = res.data.totalOrders;
+        document.getElementById('statPending').textContent = res.data.pendingOrders;
+        document.getElementById('statComms').textContent = res.data.totalComms;
+      } catch {}
+    }
+
+    // Tab Navigation
+    function showTab(tab) {
+      document.getElementById('customersSection').classList.add('hidden');
+      document.getElementById('ordersSection').classList.add('hidden');
+      document.getElementById('communicationsSection').classList.add('hidden');
+      document.getElementById('tabCustomers').className = 'px-4 py-2 bg-gray-300 text-gray-700';
+      document.getElementById('tabOrders').className = 'px-4 py-2 bg-gray-300 text-gray-700';
+      document.getElementById('tabComms').className = 'px-4 py-2 bg-gray-300 text-gray-700';
+
+      if (tab === 'customers') {
+        document.getElementById('customersSection').classList.remove('hidden');
+        document.getElementById('tabCustomers').className = 'px-4 py-2 bg-blue-500 text-white';
+      } else if (tab === 'orders') {
+        document.getElementById('ordersSection').classList.remove('hidden');
+        document.getElementById('tabOrders').className = 'px-4 py-2 bg-blue-500 text-white';
+      } else {
+        document.getElementById('communicationsSection').classList.remove('hidden');
+        document.getElementById('tabComms').className = 'px-4 py-2 bg-blue-500 text-white';
+      }
+    }
+
+    // ==================== CUSTOMERS ====================
+
+    async function loadCustomers() {
+      try {
+        const res = await axios.get('/api/customers');
+        const list = document.getElementById('customerList');
+        const orderSelect = document.getElementById('orderCustomer');
+        const commSelect = document.getElementById('commCustomer');
+        
+        list.innerHTML = '';
+        orderSelect.innerHTML = '<option value="">Select Customer</option>';
+        commSelect.innerHTML = '<option value="">Select Customer</option>';
+
+        res.data.forEach(c => {
+          // Customer list
+          const statusColors = { lead: 'bg-blue-100', prospect: 'bg-yellow-100', customer: 'bg-green-100', inactive: 'bg-gray-100' };
+          const li = document.createElement('li');
+          li.className = 'bg-white p-4 mb-2 rounded shadow flex justify-between items-center';
+          li.innerHTML = `
+            <div>
+              <span class="font-bold">${c.firstName} ${c.lastName}</span>
+              <span class="ml-2 text-sm text-gray-500">${c.email}</span>
+              <span class="ml-2 text-sm ${statusColors[c.status]} px-2 py-1 rounded">${c.status}</span>
+              ${c.wooCustomerId ? '<span class="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">WooCommerce</span>' : ''}
+            </div>
+            <div>
+              <button onclick="viewCustomerOrders('${c._id}')" class="bg-blue-500 text-white px-2 py-1 rounded mr-1">Orders</button>
+              <button onclick="viewCustomerComms('${c._id}')" class="bg-purple-500 text-white px-2 py-1 rounded mr-1">Comms</button>
+              ${currentRole === 'admin' ? `<button onclick="deleteCustomer('${c._id}')" class="bg-red-500 text-white px-2 py-1 rounded">Delete</button>` : ''}
+            </div>
+          `;
+          list.appendChild(li);
+
+          // Dropdowns
+          orderSelect.innerHTML += `<option value="${c._id}">${c.firstName} ${c.lastName}</option>`;
+          commSelect.innerHTML += `<option value="${c._id}">${c.firstName} ${c.lastName}</option>`;
+        });
+      } catch {}
+    }
+
+    async function addCustomer() {
+      try {
+        await axios.post('/api/customers', {
+          firstName: document.getElementById('custFirstName').value,
+          lastName: document.getElementById('custLastName').value,
+          email: document.getElementById('custEmail').value,
+          phone: document.getElementById('custPhone').value,
+          company: document.getElementById('custCompany').value,
+          address: document.getElementById('custAddress').value,
+          status: document.getElementById('custStatus').value,
+          assignedTo: document.getElementById('custAssignedTo').value
+        });
+        document.getElementById('custFirstName').value = '';
+        document.getElementById('custLastName').value = '';
+        document.getElementById('custEmail').value = '';
+        document.getElementById('custPhone').value = '';
+        document.getElementById('custCompany').value = '';
+        document.getElementById('custAddress').value = '';
+        document.getElementById('custAssignedTo').value = '';
+        loadCustomers();
+        loadStats();
+      } catch (e) {
+        alert(e.response?.data?.error || 'Error adding customer');
+      }
+    }
+
+    async function deleteCustomer(id) {
+      if (!confirm('Delete this customer and all related data?')) return;
+      try {
+        await axios.delete(`/api/customers/${id}`);
+        loadCustomers();
+        loadStats();
+      } catch {}
+    }
+
+    function viewCustomerOrders(customerId) {
+      showTab('orders');
+      loadOrders(customerId);
+    }
+
+    function viewCustomerComms(customerId) {
+      showTab('communications');
+      loadCommunications(customerId);
+    }
+
+    // ==================== ORDERS ====================
+
+    async function loadOrders(customerId) {
+      try {
+        const url = customerId ? `/api/orders/customer/${customerId}` : '/api/orders';
+        const res = await axios.get(url);
+        const list = document.getElementById('orderList');
+        list.innerHTML = '';
+
+        res.data.forEach(o => {
+          const customerName = o.customer ? `${o.customer.firstName} ${o.customer.lastName}` : 'Unknown';
+          const statusColors = { pending: 'bg-yellow-100', processing: 'bg-blue-100', shipped: 'bg-purple-100', delivered: 'bg-green-100', cancelled: 'bg-red-100' };
+          const paymentColors = { pending: 'bg-yellow-100', paid: 'bg-green-100', refunded: 'bg-orange-100', failed: 'bg-red-100' };
+          
+          const li = document.createElement('li');
+          li.className = 'bg-white p-4 mb-2 rounded shadow';
+          li.innerHTML = `
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="font-bold">#${o.orderNumber}</span>
+                <span class="ml-2 text-sm text-gray-500">${customerName}</span>
+                <span class="ml-2 font-bold text-green-600">$${o.totalAmount}</span>
+                ${o.wooOrderId ? '<span class="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">WooCommerce</span>' : ''}
+              </div>
+              <div>
+                <span class="text-sm ${statusColors[o.status]} px-2 py-1 rounded mr-1">${o.status}</span>
+                <span class="text-sm ${paymentColors[o.paymentStatus]} px-2 py-1 rounded">${o.paymentStatus}</span>
+              </div>
+            </div>
+            ${o.notes ? `<p class="text-sm text-gray-500 mt-2">${o.notes}</p>` : ''}
+            <div class="mt-2 flex gap-2">
+              ${currentRole === 'admin' ? `
+                <button onclick="updateOrderStatus('${o._id}', 'processing')" class="bg-blue-500 text-white px-2 py-1 rounded text-sm">Processing</button>
+                <button onclick="updateOrderStatus('${o._id}', 'shipped')" class="bg-purple-500 text-white px-2 py-1 rounded text-sm">Shipped</button>
+                <button onclick="updateOrderStatus('${o._id}', 'delivered')" class="bg-green-500 text-white px-2 py-1 rounded text-sm">Delivered</button>
+                <button onclick="deleteOrder('${o._id}')" class="bg-red-500 text-white px-2 py-1 rounded text-sm">Delete</button>
+              ` : ''}
+            </div>
+          `;
+          list.appendChild(li);
+        });
+      } catch {}
+    }
+
+    async function addOrder() {
+      try {
+        await axios.post('/api/orders', {
+          customer: document.getElementById('orderCustomer').value,
+          orderNumber: document.getElementById('orderNumber').value,
+          totalAmount: document.getElementById('orderTotal').value,
+          status: document.getElementById('orderStatus').value,
+          paymentStatus: document.getElementById('orderPayment').value,
+          shippingAddress: document.getElementById('orderShipping').value,
+          notes: document.getElementById('orderNotes').value,
+          products: [{ name: 'Product', quantity: 1, price: document.getElementById('orderTotal').value }]
+        });
+        document.getElementById('orderNumber').value = '';
+        document.getElementById('orderTotal').value = '';
+        document.getElementById('orderShipping').value = '';
+        document.getElementById('orderNotes').value = '';
+        loadOrders();
+        loadStats();
+      } catch (e) {
+        alert(e.response?.data?.error || 'Error adding order');
+      }
+    }
+
+    async function updateOrderStatus(id, status) {
+      try {
+        await axios.put(`/api/orders/${id}`, { status });
+        loadOrders();
+        loadStats();
+      } catch {}
+    }
+
+    async function deleteOrder(id) {
+      if (!confirm('Delete this order?')) return;
+      try {
+        await axios.delete(`/api/orders/${id}`);
+        loadOrders();
+        loadStats();
+      } catch {}
+    }
+
+    // ==================== COMMUNICATIONS ====================
+
+    async function loadCommunications(customerId) {
+      try {
+        const url = customerId ? `/api/communications/customer/${customerId}` : '/api/communications';
+        const res = await axios.get(url);
+        const list = document.getElementById('commList');
+        list.innerHTML = '';
+
+        res.data.forEach(c => {
+          const customerName = c.customer ? `${c.customer.firstName} ${c.customer.lastName}` : 'Unknown';
+          const typeColors = { call: 'bg-blue-100', email: 'bg-green-100', meeting: 'bg-purple-100', note: 'bg-gray-100', support: 'bg-red-100' };
+          const statusColors = { open: 'bg-yellow-100', 'follow-up': 'bg-orange-100', resolved: 'bg-green-100', closed: 'bg-gray-100' };
+          
+          const li = document.createElement('li');
+          li.className = 'bg-white p-4 mb-2 rounded shadow';
+          li.innerHTML = `
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="font-bold">${c.subject}</span>
+                <span class="ml-2 text-sm text-gray-500">${customerName}</span>
+                <span class="ml-2 text-sm ${typeColors[c.type]} px-2 py-1 rounded">${c.type}</span>
+                <span class="ml-2 text-sm ${statusColors[c.status]} px-2 py-1 rounded">${c.status}</span>
+              </div>
+              <div class="text-sm text-gray-400">
+                ${new Date(c.createdAt).toLocaleDateString()}
+                ${c.followUpDate ? ` | Follow-up: ${new Date(c.followUpDate).toLocaleDateString()}` : ''}
+              </div>
+            </div>
+            <p class="text-sm text-gray-600 mt-2">${c.notes}</p>
+            <div class="mt-2 flex gap-2">
+              <button onclick="updateCommStatus('${c._id}', 'resolved')" class="bg-green-500 text-white px-2 py-1 rounded text-sm">Resolve</button>
+              <button onclick="updateCommStatus('${c._id}', 'closed')" class="bg-gray-500 text-white px-2 py-1 rounded text-sm">Close</button>
+              <button onclick="deleteCommunication('${c._id}')" class="bg-red-500 text-white px-2 py-1 rounded text-sm">Delete</button>
+            </div>
+          `;
+          list.appendChild(li);
+        });
+      } catch {}
+    }
+
+    async function addCommunication() {
+      try {
+        await axios.post('/api/communications', {
+          customer: document.getElementById('commCustomer').value,
+          type: document.getElementById('commType').value,
+          subject: document.getElementById('commSubject').value,
+          notes: document.getElementById('commNotes').value,
+          followUpDate: document.getElementById('commFollowUp').value || null,
+          status: document.getElementById('commStatus').value
+        });
+        document.getElementById('commSubject').value = '';
+        document.getElementById('commNotes').value = '';
+        document.getElementById('commFollowUp').value = '';
+        loadCommunications();
+        loadStats();
+      } catch (e) {
+        alert(e.response?.data?.error || 'Error adding communication');
+      }
+    }
+
+    async function updateCommStatus(id, status) {
+      try {
+        await axios.put(`/api/communications/${id}`, { status });
+        loadCommunications();
+        loadStats();
+      } catch {}
+    }
+
+    async function deleteCommunication(id) {
+      if (!confirm('Delete this communication?')) return;
+      try {
+        await axios.delete(`/api/communications/${id}`);
+        loadCommunications();
+        loadStats();
+      } catch {}
+    }
+
+    // ==================== WOOCOMMERCE SYNC ====================
+
+    async function checkWooStatus() {
+      try {
+        const res = await axios.get('/api/woocommerce/status');
+        const statusEl = document.getElementById('wooStatus');
+        if (res.data.connected) {
+          statusEl.textContent = 'Connected: ' + (res.data.store || res.data.url);
+          statusEl.className = 'text-sm px-3 py-1 rounded bg-green-100 text-green-700';
+        } else {
+          statusEl.textContent = 'Demo Mode - ' + (res.data.message || 'Simulated data');
+          statusEl.className = 'text-sm px-3 py-1 rounded bg-yellow-100 text-yellow-700';
+        }
+      } catch {
+        document.getElementById('wooStatus').textContent = 'Error checking status';
+        document.getElementById('wooStatus').className = 'text-sm px-3 py-1 rounded bg-red-100 text-red-700';
+      }
+    }
+
+    async function syncCustomers() {
+      try {
+        document.getElementById('syncMessage').textContent = 'Syncing customers...';
+        const res = await axios.post('/api/woocommerce/sync-customers');
+        document.getElementById('syncMessage').textContent = res.data.message;
+        document.getElementById('syncMessage').className = 'text-sm text-green-600 mt-2';
+        loadCustomers();
+        loadStats();
+      } catch (e) {
+        document.getElementById('syncMessage').textContent = 'Sync failed: ' + (e.response?.data?.error || e.message);
+        document.getElementById('syncMessage').className = 'text-sm text-red-600 mt-2';
+      }
+    }
+
+    async function syncOrders() {
+      try {
+        document.getElementById('syncMessage').textContent = 'Syncing orders...';
+        const res = await axios.post('/api/woocommerce/sync-orders');
+        document.getElementById('syncMessage').textContent = res.data.message;
+        document.getElementById('syncMessage').className = 'text-sm text-green-600 mt-2';
+        loadOrders();
+        loadStats();
+      } catch (e) {
+        document.getElementById('syncMessage').textContent = 'Sync failed: ' + (e.response?.data?.error || e.message);
+        document.getElementById('syncMessage').className = 'text-sm text-red-600 mt-2';
+      }
+    }
+
+    // ==================== AUTH ====================
+
+    async function logout() {
+      await axios.post('/api/logout');
+      window.location.href = '/';
+    }
+
+    // Start
+    init();
+  </script>
+</body>
+</html>

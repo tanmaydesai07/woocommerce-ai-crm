@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign Up - CRM WooCommerce</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+  <div class="bg-white p-8 rounded-lg shadow-md w-96">
+    <h1 class="text-2xl font-bold text-center mb-6">Sign Up</h1>
+    <form id="signupForm">
+      <input type="text" id="username" placeholder="Username" class="w-full p-3 mb-3 border rounded" required>
+      <input type="password" id="password" placeholder="Password" class="w-full p-3 mb-3 border rounded" required>
+      <select id="role" class="w-full p-3 mb-3 border rounded">
+        <option value="user">User</option>
+        <option value="admin">Admin</option>
+      </select>
+      <button type="submit" class="w-full bg-blue-500 text-white p-3 rounded hover:bg-blue-600">Sign Up</button>
+    </form>
+    <p id="error" class="text-red-500 text-center mt-3"></p>
+    <p class="text-center mt-4">Already have an account? <a href="/" class="text-blue-500">Login</a></p>
+  </div>
+  <script>
+    document.getElementById('signupForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await axios.post('/api/signup', {
+          username: document.getElementById('username').value,
+          password: document.getElementById('password').value,
+          role: document.getElementById('role').value
+        });
+        window.location.href = '/dashboard.html';
+      } catch (err) {
+        document.getElementById('error').textContent = err.response?.data?.error || 'Signup failed';
+      }
+    });
+  </script>
+</body>
+</html>
