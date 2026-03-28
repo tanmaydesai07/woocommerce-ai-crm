@@ -11,6 +11,7 @@ import { initWooCommerce, getWooApi, getWooCustomers, getWooOrders, getSimulated
 const app = express();
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 // No static file serving - React handles frontend
 app.use(session({
   secret: process.env.SESSION_SECRET || 'crm-hackathon-secret',
@@ -449,7 +450,20 @@ app.get('/api/stats', auth, async (req, res) => {
 // Webhook for order updates from WooCommerce
 app.post('/api/webhooks/order', async (req, res) => {
   try {
-    const { id, status, customer_id, total, line_items, customer_note } = req.body;
+    const body = req.body || {};
+
+    // WooCommerce may send a verification ping as x-www-form-urlencoded: webhook_id=...
+    // Accept and acknowledge this so webhook activation succeeds.
+    if (body.webhook_id && !body.id) {
+      console.log(`Webhook verification ping received: webhook_id=${body.webhook_id}`);
+      return res.status(200).json({ success: true, message: 'Webhook verification received' });
+    }
+
+    const { id, status, customer_id, total, line_items, customer_note } = body;
+
+    if (!id) {
+      return res.status(200).json({ success: true, message: 'Webhook received (no order id)' });
+    }
     
     // Find or create customer
     let customer = await Customer.findOne({ wooCustomerId: String(customer_id) });

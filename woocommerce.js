@@ -1,4 +1,5 @@
-import WooCommerceRestApi from "@woocommerce/woocommerce-rest-api";
+import pkg from "@woocommerce/woocommerce-rest-api";
+const WooCommerceRestApi = pkg.default || pkg;
 
 let wooApi = null;
 
