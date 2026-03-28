@@ -26,7 +26,7 @@ export default function Sidebar({ role }) {
 
       {/* New Record Button */}
       <div className="p-4">
-        <button className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white py-2.5 rounded-lg hover:bg-gray-800 transition">
+        <button className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white py-2.5 rounded-lg hover:bg-gray-800 transition cursor-pointer">
           <span className="material-icons text-sm">add</span>
           <span>New Record</span>
         </button>
@@ -109,7 +109,7 @@ export default function Sidebar({ role }) {
             <p className="font-medium text-gray-900 text-sm">{role === 'admin' ? 'Marcus Sterling' : 'Team Member'}</p>
             <p className="text-xs text-gray-500">{role === 'admin' ? 'Lead Architect' : 'User'}</p>
           </div>
-          <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600">
+          <button onClick={handleLogout} className="text-gray-400 hover:text-gray-600 cursor-pointer">
             <span className="material-icons text-sm">logout</span>
           </button>
         </div>

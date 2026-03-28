@@ -1,141 +1,189 @@
-# ExecutiveCRM - WooCommerce Integration
+# ExecutiveCRM - WooCommerce CRM With AI Workflow Assistant
 
-A full-stack Customer Relationship Management system that integrates with WooCommerce for customer data management, order tracking, and communication workflows.
+ExecutiveCRM is a full-stack CRM tailored for WooCommerce operations. It unifies customer records, order lifecycle tracking, communication workflows, and AI-assisted follow-up drafting in a single dashboard.
 
-## Tech Stack
+## Why This Project
 
-- **Frontend:** React + Vite + Tailwind CSS
-- **Backend:** Express.js + MongoDB
-- **WooCommerce:** REST API integration with webhook support
+Most teams split e-commerce data across store admin panels, spreadsheets, and messaging tools. This project centralizes those flows so sales, support, and operations can act quickly with shared context.
 
-## Features
+## Core Capabilities
 
-- **Customer Management:** CRUD operations, status tracking (lead/prospect/customer/inactive)
-- **Order Tracking:** Kanban-style pipeline (pending → processing → shipped → delivered)
-- **Communication Workflows:** Log calls, emails, meetings with follow-up dates
-- **WooCommerce Integration:**
-  - Pull-based sync via REST API
-  - Push-based real-time updates via webhooks
-  - Mock webhook test interface for demo
-- **Dashboard Analytics:** Real-time statistics with Indian Rupee (₹) currency
+- Customer management with status lifecycle (`lead`, `prospect`, `customer`, `inactive`)
+- Kanban-style order pipeline (`pending` -> `processing` -> `shipped` -> `delivered`)
+- Communication log with follow-up dates and status tracking
+- WooCommerce integration:
+  - Pull sync via REST API
+  - Push updates via webhooks
+  - Mock webhook endpoint for demo scenarios
+- AI Agent Assistant in the Workflows tab:
+  - Generates next-best action
+  - Drafts customer follow-up text
+  - Auto-fills communication form for fast execution
+  - Falls back to built-in recommendation logic when external AI is unavailable
+
+## Architecture
+
+- Frontend: React + Vite + Tailwind CSS
+- Backend: Express.js + MongoDB (Mongoose)
+- Store Integration: WooCommerce REST + Webhooks
+- AI Integration: Gemini `generateContent` API (server-side)
 
 ## Quick Start
 
 ### Prerequisites
-- Node.js v18+
-- MongoDB Atlas account
 
-### Installation
+- Node.js 18+
+- MongoDB Atlas (or local MongoDB)
+
+### Setup
 
 ```bash
-# Install dependencies
 npm install
-
-# Configure environment
 cp .env.example .env
-# Edit .env with your MongoDB URI
 ```
 
-### Running the Application
+Then fill `.env` with your credentials.
 
-**Terminal 1 - Backend API:**
+### Run Locally
+
+Terminal 1 (backend):
+
 ```bash
 npm run server
 ```
 
-**Terminal 2 - Frontend:**
+Terminal 2 (frontend):
+
 ```bash
 npm run dev
 ```
 
-Open http://localhost:5173 in your browser.
+Open the frontend URL shown by Vite in terminal output (usually `http://localhost:5173`, but it may auto-switch to another port like `5174` if occupied).
 
-### Default Login
+### Demo Credentials (Local Only)
+
+Seeded on first backend run:
+
 - Admin: `admin` / `admin123`
 - User: `user` / `user123`
 
-## API Endpoints
+These credentials are for local demo only.
 
-### Authentication
-- `POST /api/login` - User login
-- `POST /api/signup` - User registration (always creates user role)
-- `POST /api/logout` - User logout
-- `GET /api/me` - Get current user
+## Environment Variables
+
+Use `.env.example` as a template.
+
+- `MONGO_URI` (required)
+- `SESSION_SECRET` (recommended)
+- `WOO_URL` (optional, required for real Woo sync)
+- `WOO_CONSUMER_KEY` (optional, required for real Woo sync)
+- `WOO_CONSUMER_SECRET` (optional, required for real Woo sync)
+- `GEMINI_API_KEY` (optional, enables live AI generation)
+- `GEMINI_MODEL` (optional, defaults to `gemini-2.0-flash`)
+
+## NPM Scripts
+
+- `npm run dev` - start Vite frontend
+- `npm run server` - start backend with nodemon
+- `npm run start` - start backend (production-style)
+- `npm run build` - build frontend
+- `npm run lint` - run ESLint
+- `npm test` - run tests
+
+## API Overview
+
+### Auth
+
+- `POST /api/signup`
+- `POST /api/login`
+- `POST /api/logout`
+- `GET /api/me`
 
 ### Customers
-- `GET /api/customers` - List customers
-- `POST /api/customers` - Create customer
-- `PUT /api/customers/:id` - Update customer
-- `DELETE /api/customers/:id` - Delete customer
+
+- `GET /api/customers`
+- `GET /api/customers/:id`
+- `POST /api/customers`
+- `PUT /api/customers/:id`
+- `DELETE /api/customers/:id`
 
 ### Orders
-- `GET /api/orders` - List orders
-- `POST /api/orders` - Create order
-- `PUT /api/orders/:id` - Update order
-- `DELETE /api/orders/:id` - Delete order
+
+- `GET /api/orders`
+- `GET /api/orders/customer/:customerId`
+- `POST /api/orders`
+- `PUT /api/orders/:id`
+- `DELETE /api/orders/:id`
 
 ### Communications
-- `GET /api/communications` - List communications
-- `POST /api/communications` - Create communication
-- `PUT /api/communications/:id` - Update communication
-- `DELETE /api/communications/:id` - Delete communication
+
+- `GET /api/communications`
+- `GET /api/communications/customer/:customerId`
+- `POST /api/communications`
+- `PUT /api/communications/:id`
+- `DELETE /api/communications/:id`
 
 ### WooCommerce
-- `POST /api/woocommerce/sync-customers` - Sync customers
-- `POST /api/woocommerce/sync-orders` - Sync orders
-- `GET /api/woocommerce/status` - Check connection
 
-### Webhooks (Real-time)
-- `POST /api/webhooks/order` - Receive order updates
-- `POST /api/webhooks/customer` - Receive customer updates
-- `POST /api/webhooks/test` - Test webhook (mock data)
+- `POST /api/woocommerce/sync-customers`
+- `POST /api/woocommerce/sync-orders`
+- `GET /api/woocommerce/status`
+
+### AI
+
+- `POST /api/ai/suggest`
+
+### Webhooks
+
+- `POST /api/webhooks/order`
+- `POST /api/webhooks/customer`
+- `POST /api/webhooks/test`
 
 ### Analytics
-- `GET /api/stats` - Dashboard statistics
+
+- `GET /api/stats`
 
 ## Project Structure
 
 ```
 crm-woocommerce/
-├── server.js              # Express API server
-├── woocommerce.js         # WooCommerce service
-├── vite.config.js         # Vite config with API proxy
+├── server.js
+├── woocommerce.js
+├── vite.config.js
 ├── package.json
-├── .env                   # Environment variables (not in git)
+├── .env.example
 ├── models/
-│   ├── User.js           # User model (admin/user roles)
-│   ├── Customer.js       # Customer model
-│   ├── Order.js          # Order model
-│   └── Communication.js  # Communication model
+│   ├── User.js
+│   ├── Customer.js
+│   ├── Order.js
+│   └── Communication.js
+├── tests/
+│   ├── unit/
+│   └── e2e/
 └── src/
-    ├── App.jsx           # React Router setup
-    ├── main.jsx          # React entry point
-    ├── index.css         # Tailwind CSS
-    ├── pages/
-    │   ├── Login.jsx     # Login page
-    │   ├── Signup.jsx    # Signup page
-    │   └── Dashboard.jsx # Main dashboard
-    └── components/
-        └── Sidebar.jsx   # Navigation sidebar
+    ├── App.jsx
+    ├── main.jsx
+    ├── index.css
+    ├── components/
+    │   └── Sidebar.jsx
+    └── pages/
+        ├── Login.jsx
+        ├── Signup.jsx
+        └── Dashboard.jsx
 ```
 
-## WooCommerce Integration
+## Testing And Quality
 
-### Method 1: REST API (Pull-based)
-Configure WooCommerce API keys in `.env` to sync customers and orders.
+- Lint: `npm run lint`
+- Unit + integration-style checks: `npm test`
 
-### Method 2: Webhooks (Push-based, Real-time)
-Configure WooCommerce webhooks to push updates to `/api/webhooks/order` and `/api/webhooks/customer`.
+## Security And Production Notes
 
-### Method 3: Mock Webhooks (Demo)
-Use the test endpoint to simulate webhooks without a real WooCommerce store.
+- `.env` is git-ignored; do not commit real credentials.
+- Current authentication uses demo-grade seeded users and plain-text password matching.
+- For production use, add password hashing, stricter session/cookie settings, and secret rotation.
+- Rotate API keys immediately if they are exposed in commits, screenshots, or demos.
 
-## Security Notes
+## Status
 
-- Signup always creates users with 'user' role (prevents privilege escalation)
-- Session secret should be set via `SESSION_SECRET` environment variable
-- `.env` is excluded from version control
-
----
-
-Built for Kilowott Hack-AI-thon
+Built as a hackathon project and actively improved for production-style documentation and workflow quality.

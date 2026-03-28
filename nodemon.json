@@ -1,0 +1,17 @@
+{
+  "watch": [
+    "server.js",
+    "woocommerce.js",
+    "models",
+    "utils"
+  ],
+  "ext": "js,mjs,cjs,json",
+  "ignore": [
+    "src/**",
+    "public/**",
+    "dist/**",
+    "README.md",
+    "IMPLEMENTATION_PLAN.md",
+    "VIDEO_SCRIPT.md"
+  ]
+}

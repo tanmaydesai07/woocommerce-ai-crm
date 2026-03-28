@@ -40,6 +40,40 @@ export default function Dashboard() {
   const [aiSuggestion, setAiSuggestion] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [regionFilter, setRegionFilter] = useState('');
+
+  // Filtered data based on search and filters
+  const filteredCustomers = customers.filter(c => {
+    const matchesSearch = !searchQuery || 
+      `${c.firstName} ${c.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.company?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.phone?.includes(searchQuery);
+    
+    const matchesStatus = !statusFilter || c.status === statusFilter;
+    
+    const matchesRegion = !regionFilter || 
+      c.address?.toLowerCase().includes(regionFilter.toLowerCase()) ||
+      c.company?.toLowerCase().includes(regionFilter.toLowerCase());
+    
+    return matchesSearch && matchesStatus && matchesRegion;
+  });
+
+  const filteredOrders = orders.filter(o =>
+    !searchQuery ||
+    o.orderNumber?.includes(searchQuery) ||
+    `${o.customer?.firstName} ${o.customer?.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    o.totalAmount?.toString().includes(searchQuery)
+  );
+
+  const filteredCommunications = communications.filter(c =>
+    !searchQuery ||
+    c.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    `${c.customer?.firstName} ${c.customer?.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.type?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   async function loadStats() {
     try {
@@ -132,9 +166,18 @@ export default function Dashboard() {
 
   async function deleteCustomer(id) {
     if (!confirm('Delete customer?')) return;
-    await axios.delete(`/api/customers/${id}`);
-    loadCustomers();
-    loadStats();
+    try {
+      await axios.delete(`/api/customers/${id}`);
+      loadCustomers();
+      loadStats();
+    } catch (error) {
+      if (error.response?.status === 401) {
+        alert('Session expired. Please login again.');
+        navigate('/');
+        return;
+      }
+      alert(error.response?.data?.error || 'Error deleting customer');
+    }
   }
 
   async function addCustomer(e) {
@@ -145,8 +188,13 @@ export default function Dashboard() {
       setShowCustomerForm(false);
       loadCustomers();
       loadStats();
-    } catch {
-      alert('Error adding customer');
+    } catch (error) {
+      if (error.response?.status === 401) {
+        alert('Session expired. Please login again.');
+        navigate('/');
+        return;
+      }
+      alert(error.response?.data?.error || 'Error adding customer');
     }
   }
 
@@ -158,8 +206,13 @@ export default function Dashboard() {
       setShowOrderForm(false);
       loadOrders();
       loadStats();
-    } catch {
-      alert('Error adding order');
+    } catch (error) {
+      if (error.response?.status === 401) {
+        alert('Session expired. Please login again.');
+        navigate('/');
+        return;
+      }
+      alert(error.response?.data?.error || 'Error adding order');
     }
   }
 
@@ -175,9 +228,75 @@ export default function Dashboard() {
       setShowCommForm(false);
       loadCommunications();
       loadStats();
-    } catch {
-      alert('Error adding communication');
+    } catch (error) {
+      if (error.response?.status === 401) {
+        alert('Session expired. Please login again.');
+        navigate('/');
+        return;
+      }
+      alert(error.response?.data?.error || 'Error adding communication');
     }
+  }
+
+  function exportCSV() {
+    const headers = ['Name', 'Email', 'Phone', 'Company', 'Address', 'Status', 'Created At'];
+    const rows = customers.map(c => [
+      `${c.firstName} ${c.lastName}`,
+      c.email,
+      c.phone || '',
+      c.company || '',
+      c.address || '',
+      c.status,
+      new Date(c.createdAt).toLocaleDateString()
+    ]);
+    
+    const csv = [headers.join(','), ...rows.map(r => r.map(cell => `"${cell}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `customers_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadReport() {
+    const report = `CRM REPORT - ${new Date().toLocaleDateString()}
+========================================
+
+STATISTICS
+----------
+Total Customers: ${stats.totalCustomers || 0}
+Total Orders: ${stats.totalOrders || 0}
+Total Revenue: ₹${(orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0)).toLocaleString('en-IN')}
+Pending Orders: ${orders.filter(o => o.status === 'pending').length}
+Processing Orders: ${orders.filter(o => o.status === 'processing').length}
+Completed Orders: ${orders.filter(o => o.status === 'delivered').length}
+Total Communications: ${stats.totalComms || 0}
+
+TOP CUSTOMERS
+-------------
+${customers.slice(0, 5).map((c, i) => `${i+1}. ${c.firstName} ${c.lastName} - ${c.email} - ${c.status}`).join('\n')}
+
+RECENT ORDERS
+-------------
+${orders.slice(0, 5).map(o => `#${o.orderNumber} - ${o.customer?.firstName} ${o.customer?.lastName} - ₹${o.totalAmount} - ${o.status}`).join('\n')}
+`;
+    
+    const blob = new Blob([report], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `crm_report_${new Date().toISOString().split('T')[0]}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function refreshData() {
+    loadStats();
+    loadCustomers();
+    loadOrders();
+    loadCommunications();
   }
 
   async function updateOrderStatus(id, status) {
@@ -304,6 +423,8 @@ export default function Dashboard() {
               <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">search</span>
               <input
                 type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search..."
                 className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-gray-200"
               />
@@ -352,11 +473,11 @@ export default function Dashboard() {
 
               {/* Action Buttons */}
               <div className="flex gap-3 mb-6">
-                <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                <button onClick={downloadReport} className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer">
                   <span className="material-icons text-sm">download</span>
                   Download Report
                 </button>
-                <button onClick={syncOrders} className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                <button onClick={refreshData} className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer">
                   <span className="material-icons text-sm">sync</span>
                   Refresh Data
                 </button>
@@ -493,15 +614,15 @@ export default function Dashboard() {
 
               {/* Action Buttons */}
               <div className="flex gap-3 mb-6">
-                <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                <button onClick={exportCSV} className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer">
                   <span className="material-icons text-sm">ios_share</span>
                   Export CSV
                 </button>
-                <button onClick={() => setShowCustomerForm(!showCustomerForm)} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                <button onClick={() => setShowCustomerForm(!showCustomerForm)} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 cursor-pointer">
                   <span className="material-icons text-sm">person_add</span>
                   Add Customer
                 </button>
-                <button onClick={syncCustomers} className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                <button onClick={syncCustomers} className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer">
                   <span className="material-icons text-sm">sync</span>
                   Sync WooCommerce
                 </button>
@@ -534,18 +655,38 @@ export default function Dashboard() {
 
               {/* Filters */}
               <div className="flex gap-4 mb-6">
-                <select className="px-4 py-2 border border-gray-300 rounded-lg">
-                  <option>Filter by Status</option>
-                  <option>Active</option>
-                  <option>Lead</option>
-                  <option>Inactive</option>
+                <select 
+                  value={statusFilter} 
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg cursor-pointer"
+                >
+                  <option value="">All Status</option>
+                  <option value="customer">Customer</option>
+                  <option value="lead">Lead</option>
+                  <option value="prospect">Prospect</option>
+                  <option value="inactive">Inactive</option>
                 </select>
-                <select className="px-4 py-2 border border-gray-300 rounded-lg">
-                  <option>All Regions</option>
-                  <option>North America</option>
-                  <option>Europe</option>
-                  <option>Asia Pacific</option>
+                <select 
+                  value={regionFilter}
+                  onChange={(e) => setRegionFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg cursor-pointer"
+                >
+                  <option value="">All Regions</option>
+                  <option value="mumbai">Mumbai</option>
+                  <option value="bangalore">Bangalore</option>
+                  <option value="delhi">Delhi</option>
+                  <option value="hyderabad">Hyderabad</option>
+                  <option value="chennai">Chennai</option>
+                  <option value="pune">Pune</option>
                 </select>
+                {(statusFilter || regionFilter) && (
+                  <button 
+                    onClick={() => { setStatusFilter(''); setRegionFilter(''); }}
+                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 cursor-pointer"
+                  >
+                    Clear Filters
+                  </button>
+                )}
               </div>
 
               {/* Customer Table */}
@@ -561,7 +702,7 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {customers.map(c => (
+                    {filteredCustomers.map(c => (
                       <tr key={c._id} className="cursor-pointer hover:bg-gray-50" onClick={() => openCustomerModal(c._id)}>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
@@ -634,7 +775,7 @@ export default function Dashboard() {
 
               {/* Add Order Button */}
               <div className="flex gap-3 mb-6">
-                <button onClick={() => setShowOrderForm(!showOrderForm)} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                <button onClick={() => setShowOrderForm(!showOrderForm)} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 cursor-pointer">
                   <span className="material-icons text-sm">add_shopping_cart</span>
                   New Order
                 </button>
@@ -676,10 +817,10 @@ export default function Dashboard() {
                   <div key={status} className="bg-gray-100 rounded-xl p-4">
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="font-semibold text-gray-700 capitalize">{status}</h3>
-                      <span className="text-sm text-gray-500">{orders.filter(o => o.status === status).length}</span>
+                      <span className="text-sm text-gray-500">{filteredOrders.filter(o => o.status === status).length}</span>
                     </div>
                     <div className="space-y-3">
-                      {orders.filter(o => o.status === status).slice(0, 3).map(o => (
+                      {filteredOrders.filter(o => o.status === status).slice(0, 3).map(o => (
                         <div key={o._id} className="bg-white p-4 rounded-lg border border-gray-200">
                           <div className="flex justify-between items-start mb-2">
                             <button
@@ -708,7 +849,7 @@ export default function Dashboard() {
                                 const next = { pending: 'processing', processing: 'shipped', shipped: 'delivered' }[status];
                                 updateOrderStatus(o._id, next);
                               }}
-                              className="mt-2 text-xs text-blue-600 hover:underline"
+                              className="mt-2 text-xs text-blue-600 hover:underline cursor-pointer"
                             >
                               Move to {status === 'pending' ? 'Processing' : status === 'processing' ? 'Shipped' : 'Delivered'}
                             </button>
@@ -862,7 +1003,7 @@ export default function Dashboard() {
 
               {/* Add Communication Button */}
               <div className="flex gap-3 mb-6">
-                <button onClick={() => setShowCommForm(!showCommForm)} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                <button onClick={() => setShowCommForm(!showCommForm)} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 cursor-pointer">
                   <span className="material-icons text-sm">add</span>
                   Log Communication
                 </button>
@@ -907,7 +1048,7 @@ export default function Dashboard() {
                   <h2 className="font-semibold text-gray-900">Recent Communications</h2>
                 </div>
                 <div className="divide-y divide-gray-200">
-                  {communications.map(c => (
+                  {filteredCommunications.map(c => (
                     <div key={c._id} className="px-6 py-4 flex justify-between items-center">
                       <div className="flex items-center gap-4">
                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${c.type === 'call' ? 'bg-blue-100' : c.type === 'email' ? 'bg-green-100' : 'bg-purple-100'}`}>

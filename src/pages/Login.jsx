@@ -106,7 +106,6 @@ export default function Login() {
               <p className="text-sm font-medium text-blue-800 mb-2">Test Credentials</p>
               <div className="space-y-1 text-sm text-blue-700">
                 <p><strong>Admin Access:</strong> admin / admin123</p>
-                <p><strong>User Access:</strong> user / user123</p>
               </div>
             </div>
           </div>
