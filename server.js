@@ -1,6 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import session from 'express-session';
+import axios from 'axios';
 import 'dotenv/config';
 import User from './models/User.js';
 import Customer from './models/Customer.js';
@@ -24,6 +25,154 @@ async function createStatusChangeCommunication({ order, previousStatus, nextStat
     ...payload,
     createdBy
   });
+}
+
+function getDefaultFollowUpDate() {
+  const nextDay = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  return nextDay.toISOString().slice(0, 10);
+}
+
+function parseGeminiJson(text) {
+  if (!text || typeof text !== 'string') return null;
+
+  const direct = text.trim();
+  try {
+    return JSON.parse(direct);
+  } catch {
+    // continue
+  }
+
+  const withoutFence = direct
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```$/i, '')
+    .trim();
+
+  try {
+    return JSON.parse(withoutFence);
+  } catch {
+    // continue
+  }
+
+  const objectMatch = withoutFence.match(/\{[\s\S]*\}/);
+  if (!objectMatch) return null;
+
+  try {
+    return JSON.parse(objectMatch[0]);
+  } catch {
+    return null;
+  }
+}
+
+function buildRuleBasedSuggestion({ customer, order, communications, goal }) {
+  const customerName = `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() || 'Customer';
+  const orderRef = order?.orderNumber ? `#${order.orderNumber}` : 'their recent order';
+  const openComms = (communications || []).filter(c => c.status === 'open').length;
+
+  let priority = 'medium';
+  let recommendedType = 'email';
+  let nextAction = `Send a proactive update for order ${orderRef}`;
+  let reason = 'Proactive updates reduce support tickets and improve trust.';
+
+  if (order?.status === 'pending') {
+    priority = 'high';
+    nextAction = `Confirm payment and expected processing timeline for order ${orderRef}`;
+    reason = 'Pending orders benefit from early intervention to prevent drop-offs.';
+  } else if (order?.status === 'processing') {
+    nextAction = `Send fulfillment progress update for order ${orderRef}`;
+    reason = 'Processing-stage updates improve transparency and customer confidence.';
+  } else if (order?.status === 'shipped') {
+    recommendedType = 'note';
+    nextAction = `Share delivery ETA and tracking reassurance for order ${orderRef}`;
+    reason = 'Shipping-stage reassurance lowers anxiety and repeat support contacts.';
+  } else if (order?.status === 'delivered') {
+    recommendedType = 'email';
+    nextAction = `Request feedback and suggest next best product after order ${orderRef}`;
+    reason = 'Post-delivery outreach boosts retention and repeat purchases.';
+  }
+
+  if (openComms > 0) {
+    priority = 'high';
+    reason = `There are ${openComms} open communication thread(s); a quick follow-up prevents SLA misses.`;
+  }
+
+  const draftMessage = [
+    `Hi ${customerName},`,
+    '',
+    `Quick update from our team regarding ${orderRef}.`,
+    order?.status
+      ? `Current status: ${order.status}. We are tracking this closely and will keep you informed.`
+      : 'We reviewed your recent activity and wanted to proactively support your next step.',
+    goal ? `Our internal goal here is: ${goal}.` : 'Our goal is to keep your experience smooth and transparent.',
+    '',
+    'If you need anything urgent, reply to this message and we will prioritize it.',
+    '',
+    'Best regards,',
+    'Customer Success Team'
+  ].join('\n');
+
+  return {
+    nextAction,
+    draftMessage,
+    priority,
+    reason,
+    recommendedType,
+    followUpDate: getDefaultFollowUpDate()
+  };
+}
+
+function normalizeSuggestion(suggestion, fallback) {
+  const allowedPriority = new Set(['low', 'medium', 'high']);
+  const allowedType = new Set(['call', 'email', 'meeting', 'note', 'support']);
+
+  const normalizedPriority = String(suggestion?.priority || '').toLowerCase();
+  const normalizedType = String(suggestion?.recommendedType || '').toLowerCase();
+  const followUpDate = suggestion?.followUpDate ? String(suggestion.followUpDate).slice(0, 10) : fallback.followUpDate;
+
+  return {
+    nextAction: suggestion?.nextAction?.trim() || fallback.nextAction,
+    draftMessage: suggestion?.draftMessage?.trim() || fallback.draftMessage,
+    priority: allowedPriority.has(normalizedPriority) ? normalizedPriority : fallback.priority,
+    reason: suggestion?.reason?.trim() || fallback.reason,
+    recommendedType: allowedType.has(normalizedType) ? normalizedType : fallback.recommendedType,
+    followUpDate
+  };
+}
+
+function extractGeminiErrorMessage(error) {
+  const statusCode = error?.response?.status;
+  const apiStatus = error?.response?.data?.error?.status;
+  const responseData = error?.response?.data;
+  const responseMessage = responseData?.error?.message;
+  const normalizedMessage = String(responseMessage || error?.message || '').toLowerCase();
+
+  if (
+    statusCode === 429 ||
+    apiStatus === 'RESOURCE_EXHAUSTED' ||
+    normalizedMessage.includes('quota') ||
+    normalizedMessage.includes('rate limit')
+  ) {
+    return 'Gemini is temporarily unavailable due to quota limits. Using built-in AI suggestion.';
+  }
+
+  if (
+    statusCode === 401 ||
+    statusCode === 403 ||
+    normalizedMessage.includes('permission') ||
+    normalizedMessage.includes('api key')
+  ) {
+    return 'Gemini access is not available right now. Using built-in AI suggestion.';
+  }
+
+  if (statusCode >= 500) {
+    return 'Gemini service is temporarily unavailable. Using built-in AI suggestion.';
+  }
+
+  if (responseMessage || error?.message) {
+    return 'Gemini is currently unavailable. Using built-in AI suggestion.';
+  }
+
+  return 'Gemini request failed. Using built-in AI suggestion.';
 }
 
 const app = express();
@@ -420,6 +569,142 @@ app.get('/api/woocommerce/status', auth, async (req, res) => {
     }
   } catch (e) {
     res.json({ connected: false, error: e.message });
+  }
+});
+
+// ==================== AI SUGGESTIONS ====================
+
+app.post('/api/ai/suggest', auth, async (req, res) => {
+  try {
+    const { customerId, orderId, goal } = req.body;
+
+    let customer = null;
+    let order = null;
+
+    if (customerId) {
+      customer = await Customer.findById(customerId);
+    }
+
+    if (orderId) {
+      order = await Order.findById(orderId).populate('customer');
+    }
+
+    if (!customer && order?.customer) {
+      customer = order.customer;
+    }
+
+    if (!customer) {
+      customer = await Customer.findOne().sort({ createdAt: -1 });
+    }
+
+    if (!order && customer?._id) {
+      order = await Order.findOne({ customer: customer._id }).sort({ createdAt: -1 }).populate('customer');
+    }
+
+    if (!customer && !order) {
+      return res.status(400).json({ error: 'No customer/order context available. Add data first.' });
+    }
+
+    const resolvedCustomerId = customer?._id || order?.customer?._id || null;
+    const resolvedOrderId = order?._id || null;
+
+    const recentCommunications = resolvedCustomerId
+      ? await Communication.find({ customer: resolvedCustomerId }).sort({ createdAt: -1 }).limit(5)
+      : [];
+
+    const fallback = buildRuleBasedSuggestion({
+      customer,
+      order,
+      communications: recentCommunications,
+      goal: goal || ''
+    });
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({
+        source: 'rule-based-fallback',
+        warning: 'GEMINI_API_KEY is missing. Using rule-based suggestion.',
+        customerId: resolvedCustomerId,
+        orderId: resolvedOrderId,
+        ...fallback
+      });
+    }
+
+    const prompt = [
+      'You are an e-commerce CRM copilot for customer success and operations.',
+      'Return ONLY valid JSON with keys:',
+      'nextAction, draftMessage, priority, reason, recommendedType, followUpDate',
+      'Constraints:',
+      '- priority must be one of: low, medium, high',
+      '- recommendedType must be one of: call, email, meeting, note, support',
+      '- followUpDate must be YYYY-MM-DD',
+      '',
+      `Goal: ${goal || 'Improve customer retention and close open loops quickly.'}`,
+      `Customer: ${JSON.stringify({
+        id: String(resolvedCustomerId || ''),
+        firstName: customer?.firstName || order?.customer?.firstName || '',
+        lastName: customer?.lastName || order?.customer?.lastName || '',
+        email: customer?.email || order?.customer?.email || '',
+        status: customer?.status || order?.customer?.status || ''
+      })}`,
+      `Order: ${JSON.stringify(order ? {
+        id: String(order._id),
+        orderNumber: order.orderNumber,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        totalAmount: order.totalAmount,
+        notes: order.notes,
+        products: order.products
+      } : null)}`,
+      `RecentCommunications: ${JSON.stringify(recentCommunications.map(c => ({
+        type: c.type,
+        subject: c.subject,
+        status: c.status,
+        createdAt: c.createdAt
+      })))}`
+    ].join('\n');
+
+    const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+
+    try {
+      const response = await axios.post(geminiUrl, {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.3,
+          responseMimeType: 'application/json'
+        }
+      }, {
+        timeout: 15000
+      });
+
+      const rawText = response.data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('\n') || '';
+      const parsedSuggestion = parseGeminiJson(rawText);
+      const suggestion = normalizeSuggestion(parsedSuggestion, fallback);
+
+      return res.json({
+        source: 'gemini',
+        model,
+        customerId: resolvedCustomerId,
+        orderId: resolvedOrderId,
+        ...suggestion
+      });
+    } catch (geminiError) {
+      const warning = extractGeminiErrorMessage(geminiError);
+      const statusCode = geminiError?.response?.status || 'unknown';
+      console.warn(`AI suggestion warning (Gemini unavailable, status ${statusCode}). Using fallback.`);
+
+      return res.json({
+        source: 'rule-based-fallback',
+        model,
+        warning,
+        customerId: resolvedCustomerId,
+        orderId: resolvedOrderId,
+        ...fallback
+      });
+    }
+  } catch (e) {
+    console.error('AI suggestion error:', e.message);
+    res.status(500).json({ error: 'Failed to generate AI suggestion. Check GEMINI_API_KEY and try again.' });
   }
 });
 

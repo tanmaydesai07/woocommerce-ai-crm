@@ -32,6 +32,14 @@ export default function Dashboard() {
   const [selectedProductOrder, setSelectedProductOrder] = useState(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [aiAssistForm, setAiAssistForm] = useState({
+    customerId: '',
+    orderId: '',
+    goal: 'Improve customer retention and close unresolved communication loops.'
+  });
+  const [aiSuggestion, setAiSuggestion] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
 
   async function loadStats() {
     try {
@@ -239,6 +247,50 @@ export default function Dashboard() {
     setShowOrderModal(false);
     setSelectedOrder(null);
   }
+
+  async function generateAiSuggestion() {
+    try {
+      setAiLoading(true);
+      setAiError('');
+      const res = await axios.post('/api/ai/suggest', aiAssistForm);
+      setAiSuggestion(res.data);
+
+      if (!aiAssistForm.customerId && res.data.customerId) {
+        setAiAssistForm(prev => ({ ...prev, customerId: String(res.data.customerId) }));
+      }
+      if (!aiAssistForm.orderId && res.data.orderId) {
+        setAiAssistForm(prev => ({ ...prev, orderId: String(res.data.orderId) }));
+      }
+    } catch (error) {
+      if (error.response?.status === 401) {
+        setAiError('Session expired. Please login again.');
+        navigate('/');
+        return;
+      }
+      setAiError(error.response?.data?.error || 'Unable to generate AI suggestion right now.');
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  function useAiDraftInCommunication() {
+    if (!aiSuggestion?.draftMessage) return;
+
+    setShowCommForm(true);
+    setCommForm(prev => ({
+      ...prev,
+      customer: aiAssistForm.customerId || String(aiSuggestion.customerId || prev.customer || ''),
+      type: aiSuggestion.recommendedType || 'email',
+      subject: aiSuggestion.nextAction ? `AI: ${aiSuggestion.nextAction}` : prev.subject,
+      notes: aiSuggestion.draftMessage,
+      status: 'follow-up',
+      followUpDate: aiSuggestion.followUpDate || prev.followUpDate
+    }));
+  }
+
+  const aiOrdersForSelection = aiAssistForm.customerId
+    ? orders.filter(o => o.customer?._id === aiAssistForm.customerId)
+    : orders;
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -695,6 +747,116 @@ export default function Dashboard() {
                 <div className="bg-white p-6 rounded-xl border border-gray-200">
                   <p className="text-sm text-gray-500 mb-1">Closed</p>
                   <p className="text-2xl font-bold text-gray-900">{communications.filter(c => c.status === 'closed').length}</p>
+                </div>
+              </div>
+
+              {/* AI Assistant */}
+              <div className="bg-white rounded-xl border border-gray-200 mb-6 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 bg-linear-to-r from-emerald-50 to-cyan-50">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h2 className="font-semibold text-gray-900">AI Agent Assistant</h2>
+                      <p className="text-sm text-gray-600">Generate next best action and communication draft using Gemini.</p>
+                    </div>
+                    {aiSuggestion?.source && (
+                      <span className={`text-xs px-2 py-1 rounded-full border ${aiSuggestion.source === 'gemini' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                        Source: {aiSuggestion.source}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-6 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <select
+                      value={aiAssistForm.customerId}
+                      onChange={(e) => setAiAssistForm(prev => ({ ...prev, customerId: e.target.value, orderId: '' }))}
+                      className="px-4 py-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="">Auto-pick customer</option>
+                      {customers.map(c => (
+                        <option key={c._id} value={c._id}>{c.firstName} {c.lastName}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={aiAssistForm.orderId}
+                      onChange={(e) => setAiAssistForm(prev => ({ ...prev, orderId: e.target.value }))}
+                      className="px-4 py-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="">Auto-pick recent order</option>
+                      {aiOrdersForSelection.map(o => (
+                        <option key={o._id} value={o._id}>#{o.orderNumber} • {o.status}</option>
+                      ))}
+                    </select>
+
+                    <button
+                      onClick={generateAiSuggestion}
+                      disabled={aiLoading}
+                      className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-60"
+                    >
+                      {aiLoading ? 'Generating...' : 'Generate AI Suggestion'}
+                    </button>
+                  </div>
+
+                  <textarea
+                    value={aiAssistForm.goal}
+                    onChange={(e) => setAiAssistForm(prev => ({ ...prev, goal: e.target.value }))}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    rows={2}
+                    placeholder="What should AI optimize for?"
+                  />
+
+                  {aiError && (
+                    <div className="px-4 py-3 rounded-lg border bg-red-50 border-red-200 text-red-700 text-sm">
+                      {aiError}
+                    </div>
+                  )}
+
+                  {aiSuggestion && (
+                    <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <p className="text-xs text-gray-500 uppercase">Next Best Action</p>
+                          <p className="font-medium text-gray-900">{aiSuggestion.nextAction}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 uppercase">Priority</p>
+                          <p className="font-medium text-gray-900 capitalize">{aiSuggestion.priority}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 uppercase">Follow-Up Date</p>
+                          <p className="font-medium text-gray-900">{aiSuggestion.followUpDate || '-'}</p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase">Reason</p>
+                        <p className="text-sm text-gray-700">{aiSuggestion.reason}</p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase">Draft Message</p>
+                        <pre className="text-sm text-gray-700 whitespace-pre-wrap bg-white border border-gray-200 rounded-lg p-3 mt-1">{aiSuggestion.draftMessage}</pre>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={useAiDraftInCommunication}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                        >
+                          Use As Communication Draft
+                        </button>
+                        <button
+                          onClick={generateAiSuggestion}
+                          disabled={aiLoading}
+                          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-white disabled:opacity-60"
+                        >
+                          Regenerate
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
