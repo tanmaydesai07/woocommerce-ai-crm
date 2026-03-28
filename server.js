@@ -7,6 +7,24 @@ import Customer from './models/Customer.js';
 import Order from './models/Order.js';
 import Communication from './models/Communication.js';
 import { initWooCommerce, getWooApi, getWooCustomers, getWooOrders, getSimulatedCustomers, getSimulatedOrders } from './woocommerce.js';
+import { mapWooStatusToOrderStatus, buildOrderStatusCommunication } from './utils/orderWorkflow.js';
+
+async function createStatusChangeCommunication({ order, previousStatus, nextStatus, createdBy }) {
+  if (!order?.customer) return;
+
+  const payload = buildOrderStatusCommunication({
+    orderNumber: order.orderNumber,
+    previousStatus,
+    nextStatus
+  });
+  if (!payload) return;
+
+  await Communication.create({
+    customer: order.customer,
+    ...payload,
+    createdBy
+  });
+}
 
 const app = express();
 
@@ -95,8 +113,7 @@ app.get('/api/me', auth, (req, res) => {
 // Get all customers
 app.get('/api/customers', auth, async (req, res) => {
   try {
-    const filter = req.session.role === 'admin' ? {} : { assignedTo: req.session.username };
-    const customers = await Customer.find(filter).sort({ createdAt: -1 });
+    const customers = await Customer.find({}).sort({ createdAt: -1 });
     res.json(customers);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -117,7 +134,6 @@ app.get('/api/customers/:id', auth, async (req, res) => {
 // Create customer
 app.post('/api/customers', auth, async (req, res) => {
   try {
-    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     const customer = await Customer.create({ ...req.body, createdBy: 'admin' });
     res.json(customer);
   } catch (e) {
@@ -128,7 +144,6 @@ app.post('/api/customers', auth, async (req, res) => {
 // Update customer
 app.put('/api/customers/:id', auth, async (req, res) => {
   try {
-    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     const customer = await Customer.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
     res.json(customer);
   } catch (e) {
@@ -139,7 +154,6 @@ app.put('/api/customers/:id', auth, async (req, res) => {
 // Delete customer
 app.delete('/api/customers/:id', auth, async (req, res) => {
   try {
-    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     await Customer.findByIdAndDelete(req.params.id);
     await Order.deleteMany({ customer: req.params.id });
     await Communication.deleteMany({ customer: req.params.id });
@@ -174,7 +188,6 @@ app.get('/api/orders/customer/:customerId', auth, async (req, res) => {
 // Create order
 app.post('/api/orders', auth, async (req, res) => {
   try {
-    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     const order = await Order.create({ ...req.body, createdBy: 'admin' });
     res.json(order);
   } catch (e) {
@@ -185,8 +198,21 @@ app.post('/api/orders', auth, async (req, res) => {
 // Update order
 app.put('/api/orders/:id', auth, async (req, res) => {
   try {
-    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
-    const order = await Order.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
+    const existingOrder = await Order.findById(req.params.id);
+    if (!existingOrder) return res.status(404).json({ error: 'Order not found' });
+
+    const previousStatus = existingOrder.status;
+    Object.assign(existingOrder, req.body);
+    await existingOrder.save();
+
+    await createStatusChangeCommunication({
+      order: existingOrder,
+      previousStatus,
+      nextStatus: existingOrder.status,
+      createdBy: req.session.username || 'system'
+    });
+
+    const order = await Order.findById(existingOrder._id).populate('customer');
     res.json(order);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -196,7 +222,6 @@ app.put('/api/orders/:id', auth, async (req, res) => {
 // Delete order
 app.delete('/api/orders/:id', auth, async (req, res) => {
   try {
-    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     await Order.findByIdAndDelete(req.params.id);
     res.json({ success: true });
   } catch (e) {
@@ -261,8 +286,6 @@ app.delete('/api/communications/:id', auth, async (req, res) => {
 // Sync customers from WooCommerce (real API or simulated)
 app.post('/api/woocommerce/sync-customers', auth, async (req, res) => {
   try {
-    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
-    
     let wooCustomers;
     let source;
     
@@ -316,8 +339,6 @@ app.post('/api/woocommerce/sync-customers', auth, async (req, res) => {
 // Sync orders from WooCommerce (real API or simulated)
 app.post('/api/woocommerce/sync-orders', auth, async (req, res) => {
   try {
-    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
-
     let wooOrders;
     let source;
     
@@ -334,17 +355,6 @@ app.post('/api/woocommerce/sync-orders', auth, async (req, res) => {
     const customers = await Customer.find({ wooCustomerId: { $ne: null } });
     let synced = 0;
     let updated = 0;
-
-    // Map WooCommerce status to our status
-    const statusMap = {
-      'pending': 'pending',
-      'processing': 'processing',
-      'on-hold': 'pending',
-      'completed': 'delivered',
-      'cancelled': 'cancelled',
-      'refunded': 'cancelled',
-      'failed': 'cancelled'
-    };
 
     for (const wo of wooOrders) {
       const wooId = String(wo.id);
@@ -365,7 +375,7 @@ app.post('/api/woocommerce/sync-orders', auth, async (req, res) => {
           price: parseFloat(item.total) || 0
         })),
         totalAmount: parseFloat(wo.total) || 0,
-        status: statusMap[wo.status] || 'pending',
+        status: mapWooStatusToOrderStatus(wo.status),
         paymentStatus: wo.status === 'completed' ? 'paid' : 'pending',
         notes: wo.customer_note || '',
         createdBy: 'woocommerce-sync'
@@ -478,23 +488,24 @@ app.post('/api/webhooks/order', async (req, res) => {
       });
     }
 
-    // Map WooCommerce status to our status
-    const statusMap = {
-      'pending': 'pending',
-      'processing': 'processing',
-      'on-hold': 'pending',
-      'completed': 'delivered',
-      'cancelled': 'cancelled'
-    };
+    const mappedStatus = mapWooStatusToOrderStatus(status);
 
     // Find or create order
     const existingOrder = await Order.findOne({ wooOrderId: String(id) });
     if (existingOrder) {
-      existingOrder.status = statusMap[status] || 'pending';
+      const previousStatus = existingOrder.status;
+      existingOrder.status = mappedStatus;
       existingOrder.notes = customer_note || existingOrder.notes;
       await existingOrder.save();
+
+      await createStatusChangeCommunication({
+        order: existingOrder,
+        previousStatus,
+        nextStatus: existingOrder.status,
+        createdBy: 'webhook'
+      });
     } else if (customer) {
-      await Order.create({
+      const createdOrder = await Order.create({
         wooOrderId: String(id),
         customer: customer._id,
         orderNumber: String(id),
@@ -504,9 +515,21 @@ app.post('/api/webhooks/order', async (req, res) => {
           price: parseFloat(item.total) || 0
         })),
         totalAmount: parseFloat(total) || 0,
-        status: statusMap[status] || 'pending',
+        status: mappedStatus,
         paymentStatus: status === 'completed' ? 'paid' : 'pending',
         notes: customer_note || '',
+        createdBy: 'webhook'
+      });
+
+      await Communication.create({
+        customer: createdOrder.customer,
+        type: 'note',
+        subject: `New WooCommerce order #${createdOrder.orderNumber}`,
+        notes: `Automated workflow: new order created via webhook with status ${createdOrder.status}.`,
+        followUpDate: ['pending', 'processing'].includes(createdOrder.status)
+          ? new Date(Date.now() + 24 * 60 * 60 * 1000)
+          : null,
+        status: createdOrder.status === 'delivered' ? 'resolved' : 'open',
         createdBy: 'webhook'
       });
     }
@@ -558,8 +581,6 @@ app.post('/api/webhooks/customer', async (req, res) => {
 // Mock webhook test endpoint (for demo)
 app.post('/api/webhooks/test', auth, async (req, res) => {
   try {
-    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
-    
     const { type } = req.body;
     
     if (type === 'order') {

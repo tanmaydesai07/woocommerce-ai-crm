@@ -20,60 +20,83 @@ export default function Dashboard() {
   const [showCommForm, setShowCommForm] = useState(false);
   const [customerForm, setCustomerForm] = useState({ firstName: '', lastName: '', email: '', phone: '', company: '', address: '', status: 'lead' });
   const [orderForm, setOrderForm] = useState({ customer: '', orderNumber: '', totalAmount: '', status: 'pending', paymentStatus: 'pending', notes: '' });
-  const [commForm, setCommForm] = useState({ customer: '', type: 'call', subject: '', notes: '', status: 'open' });
-
-  useEffect(() => {
-    init();
-  }, []);
-
-  async function init() {
-    try {
-      const res = await axios.get('/api/me');
-      setRole(res.data.role);
-      loadStats();
-      loadCustomers();
-      loadOrders();
-      loadCommunications();
-      if (res.data.role === 'admin') checkWooStatus();
-    } catch {
-      navigate('/');
-    }
-  }
+  const [commForm, setCommForm] = useState({ customer: '', type: 'call', subject: '', notes: '', status: 'open', followUpDate: '' });
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [selectedCustomerOrders, setSelectedCustomerOrders] = useState([]);
+  const [selectedCustomerComms, setSelectedCustomerComms] = useState([]);
+  const [customerModalLoading, setCustomerModalLoading] = useState(false);
+  const [customerModalError, setCustomerModalError] = useState('');
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedProductOrder, setSelectedProductOrder] = useState(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
 
   async function loadStats() {
     try {
       const res = await axios.get('/api/stats');
       setStats(res.data);
-    } catch {}
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+    }
   }
 
   async function loadCustomers() {
     try {
       const res = await axios.get('/api/customers');
       setCustomers(res.data);
-    } catch {}
+    } catch (error) {
+      console.error('Failed to load customers:', error);
+    }
   }
 
   async function loadOrders() {
     try {
       const res = await axios.get('/api/orders');
       setOrders(res.data);
-    } catch {}
+    } catch (error) {
+      console.error('Failed to load orders:', error);
+    }
   }
 
   async function loadCommunications() {
     try {
       const res = await axios.get('/api/communications');
       setCommunications(res.data);
-    } catch {}
+    } catch (error) {
+      console.error('Failed to load communications:', error);
+    }
   }
 
   async function checkWooStatus() {
     try {
       const res = await axios.get('/api/woocommerce/status');
       setWooStatus(res.data);
-    } catch {}
+    } catch (error) {
+      console.error('Failed to check WooCommerce status:', error);
+      setWooStatus({ connected: false, message: 'Status check failed' });
+    }
   }
+
+  useEffect(() => {
+    async function initDashboard() {
+      try {
+        const res = await axios.get('/api/me');
+        setRole(res.data.role);
+        loadStats();
+        loadCustomers();
+        loadOrders();
+        loadCommunications();
+        checkWooStatus();
+      } catch (error) {
+        console.error('Session check failed:', error);
+        navigate('/');
+      }
+    }
+
+    void initDashboard();
+  }, [navigate]);
 
   async function syncCustomers() {
     try {
@@ -114,7 +137,7 @@ export default function Dashboard() {
       setShowCustomerForm(false);
       loadCustomers();
       loadStats();
-    } catch (err) {
+    } catch {
       alert('Error adding customer');
     }
   }
@@ -127,7 +150,7 @@ export default function Dashboard() {
       setShowOrderForm(false);
       loadOrders();
       loadStats();
-    } catch (err) {
+    } catch {
       alert('Error adding order');
     }
   }
@@ -135,12 +158,16 @@ export default function Dashboard() {
   async function addCommunication(e) {
     e.preventDefault();
     try {
-      await axios.post('/api/communications', commForm);
-      setCommForm({ customer: '', type: 'call', subject: '', notes: '', status: 'open' });
+      const payload = {
+        ...commForm,
+        followUpDate: commForm.followUpDate || null
+      };
+      await axios.post('/api/communications', payload);
+      setCommForm({ customer: '', type: 'call', subject: '', notes: '', status: 'open', followUpDate: '' });
       setShowCommForm(false);
       loadCommunications();
       loadStats();
-    } catch (err) {
+    } catch {
       alert('Error adding communication');
     }
   }
@@ -154,6 +181,63 @@ export default function Dashboard() {
   async function updateCommStatus(id, status) {
     await axios.put(`/api/communications/${id}`, { status });
     loadCommunications();
+
+    if (selectedCustomer?._id) {
+      const customerComms = await axios.get(`/api/communications/customer/${selectedCustomer._id}`);
+      setSelectedCustomerComms(customerComms.data);
+    }
+  }
+
+  async function openCustomerModal(customerId) {
+    try {
+      setCustomerModalLoading(true);
+      setCustomerModalError('');
+      setShowCustomerModal(true);
+
+      const [customerRes, orderRes, commRes] = await Promise.all([
+        axios.get(`/api/customers/${customerId}`),
+        axios.get(`/api/orders/customer/${customerId}`),
+        axios.get(`/api/communications/customer/${customerId}`)
+      ]);
+
+      setSelectedCustomer(customerRes.data);
+      setSelectedCustomerOrders(orderRes.data);
+      setSelectedCustomerComms(commRes.data);
+    } catch (error) {
+      setCustomerModalError(error.response?.data?.error || 'Failed to load customer details');
+    } finally {
+      setCustomerModalLoading(false);
+    }
+  }
+
+  function closeCustomerModal() {
+    setShowCustomerModal(false);
+    setSelectedCustomer(null);
+    setSelectedCustomerOrders([]);
+    setSelectedCustomerComms([]);
+    setCustomerModalError('');
+  }
+
+  function openProductModal(product, order) {
+    setSelectedProduct(product);
+    setSelectedProductOrder(order);
+    setShowProductModal(true);
+  }
+
+  function closeProductModal() {
+    setShowProductModal(false);
+    setSelectedProduct(null);
+    setSelectedProductOrder(null);
+  }
+
+  function openOrderModal(order) {
+    setSelectedOrder(order);
+    setShowOrderModal(true);
+  }
+
+  function closeOrderModal() {
+    setShowOrderModal(false);
+    setSelectedOrder(null);
   }
 
   return (
@@ -191,6 +275,21 @@ export default function Dashboard() {
 
         {/* Content */}
         <div className="p-8">
+          {(wooStatus || syncMessage) && (
+            <div className="mb-6 space-y-2">
+              {wooStatus && (
+                <div className={`px-4 py-3 rounded-lg text-sm border ${wooStatus.connected ? 'bg-green-50 text-green-800 border-green-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
+                  WooCommerce: {wooStatus.connected ? `Connected to ${wooStatus.url || 'store'}` : wooStatus.message || 'Not connected'}
+                </div>
+              )}
+              {syncMessage && (
+                <div className="px-4 py-3 rounded-lg text-sm border bg-blue-50 text-blue-800 border-blue-200">
+                  Sync status: {syncMessage}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Dashboard Tab */}
           {activeTab === 'dashboard' && (
             <>
@@ -260,6 +359,7 @@ export default function Dashboard() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order ID</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                     </tr>
                   </thead>
@@ -267,9 +367,28 @@ export default function Dashboard() {
                     {orders.slice(0, 5).map(o => (
                       <tr key={o._id}>
                         <td className="px-6 py-4 text-sm text-gray-900">{o.customer?.firstName} {o.customer?.lastName}</td>
-                        <td className="px-6 py-4 text-sm text-gray-500">#{o.orderNumber}</td>
+                        <td className="px-6 py-4 text-sm text-gray-500">
+                          <button
+                            onClick={() => openOrderModal(o)}
+                            className="font-mono text-blue-600 hover:underline"
+                          >
+                            #{o.orderNumber}
+                          </button>
+                        </td>
                         <td className="px-6 py-4 text-sm text-gray-500">{new Date(o.createdAt).toLocaleDateString()}</td>
                         <td className="px-6 py-4 text-sm font-medium text-gray-900">₹{o.totalAmount?.toLocaleString('en-IN')}</td>
+                        <td className="px-6 py-4">
+                          {o.products?.length ? (
+                            <button
+                              onClick={() => openProductModal(o.products[0], o)}
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              {o.products[0].name}
+                            </button>
+                          ) : (
+                            <span className="text-xs text-gray-400">No product</span>
+                          )}
+                        </td>
                         <td className="px-6 py-4">
                           <span className={`px-2 py-1 text-xs rounded-full ${o.status === 'delivered' ? 'bg-green-100 text-green-700' : o.status === 'processing' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>{o.status}</span>
                         </td>
@@ -337,7 +456,7 @@ export default function Dashboard() {
               </div>
 
               {/* Add Customer Form */}
-              {showCustomerForm && role === 'admin' && (
+              {showCustomerForm && (
                 <form onSubmit={addCustomer} className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
                   <h3 className="font-semibold text-gray-900 mb-4">Add New Customer</h3>
                   <div className="grid grid-cols-2 gap-4">
@@ -391,7 +510,7 @@ export default function Dashboard() {
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {customers.map(c => (
-                      <tr key={c._id}>
+                      <tr key={c._id} className="cursor-pointer hover:bg-gray-50" onClick={() => openCustomerModal(c._id)}>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
@@ -412,11 +531,14 @@ export default function Dashboard() {
                           <span className={`px-2 py-1 text-xs rounded-full ${c.status === 'customer' ? 'bg-green-100 text-green-700' : c.status === 'lead' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>{c.status}</span>
                         </td>
                         <td className="px-6 py-4">
-                          {role === 'admin' && (
-                            <button onClick={() => deleteCustomer(c._id)} className="text-red-500 hover:text-red-700">
+                          <div className="flex items-center gap-2">
+                            <button onClick={(e) => { e.stopPropagation(); openCustomerModal(c._id); }} className="text-blue-600 hover:text-blue-800" title="View details">
+                              <span className="material-icons text-sm">visibility</span>
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); deleteCustomer(c._id); }} className="text-red-500 hover:text-red-700" title="Delete customer">
                               <span className="material-icons text-sm">delete</span>
                             </button>
-                          )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -467,7 +589,7 @@ export default function Dashboard() {
               </div>
 
               {/* Add Order Form */}
-              {showOrderForm && role === 'admin' && (
+              {showOrderForm && (
                 <form onSubmit={addOrder} className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
                   <h3 className="font-semibold text-gray-900 mb-4">Create New Order</h3>
                   <div className="grid grid-cols-2 gap-4">
@@ -508,14 +630,27 @@ export default function Dashboard() {
                       {orders.filter(o => o.status === status).slice(0, 3).map(o => (
                         <div key={o._id} className="bg-white p-4 rounded-lg border border-gray-200">
                           <div className="flex justify-between items-start mb-2">
-                            <span className="text-xs font-mono text-gray-500">#{o.orderNumber}</span>
+                            <button
+                              onClick={() => openOrderModal(o)}
+                              className="text-xs font-mono text-blue-600 hover:underline"
+                            >
+                              #{o.orderNumber}
+                            </button>
                             <span className={`text-xs px-2 py-0.5 rounded ${o.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                               {o.paymentStatus?.toUpperCase()}
                             </span>
                           </div>
                           <p className="font-medium text-gray-900 text-sm">{o.customer?.firstName} {o.customer?.lastName}</p>
                           <p className="text-sm font-bold text-gray-900 mt-2">₹{o.totalAmount?.toLocaleString('en-IN')}</p>
-                          {role === 'admin' && status !== 'delivered' && (
+                          {o.products?.length > 0 && (
+                            <button
+                              onClick={() => openProductModal(o.products[0], o)}
+                              className="mt-2 block text-xs text-indigo-600 hover:underline"
+                            >
+                              View Product: {o.products[0].name}
+                            </button>
+                          )}
+                          {status !== 'delivered' && (
                             <button
                               onClick={() => {
                                 const next = { pending: 'processing', processing: 'shipped', shipped: 'delivered' }[status];
@@ -595,6 +730,7 @@ export default function Dashboard() {
                       <option value="resolved">Resolved</option>
                       <option value="closed">Closed</option>
                     </select>
+                    <input type="date" value={commForm.followUpDate} onChange={e => setCommForm({...commForm, followUpDate: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg" />
                   </div>
                   <div className="flex gap-3 mt-4">
                     <button type="submit" className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">Save Communication</button>
@@ -635,6 +771,279 @@ export default function Dashboard() {
             </>
           )}
         </div>
+
+        {showCustomerModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeCustomerModal}>
+            <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-xl border border-gray-200 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900">Customer Details</h2>
+                <button onClick={closeCustomerModal} className="text-gray-500 hover:text-gray-700">
+                  <span className="material-icons">close</span>
+                </button>
+              </div>
+
+              {customerModalLoading && (
+                <div className="px-6 py-8 text-gray-600">Loading customer details...</div>
+              )}
+
+              {!customerModalLoading && customerModalError && (
+                <div className="px-6 py-8 text-red-600">{customerModalError}</div>
+              )}
+
+              {!customerModalLoading && !customerModalError && selectedCustomer && (
+                <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase">Name</p>
+                      <p className="font-medium text-gray-900">{selectedCustomer.firstName} {selectedCustomer.lastName}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase">Status</p>
+                      <p className="font-medium text-gray-900 capitalize">{selectedCustomer.status}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase">Email</p>
+                      <p className="font-medium text-gray-900">{selectedCustomer.email || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase">Phone</p>
+                      <p className="font-medium text-gray-900">{selectedCustomer.phone || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase">Company</p>
+                      <p className="font-medium text-gray-900">{selectedCustomer.company || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase">Address</p>
+                      <p className="font-medium text-gray-900">{selectedCustomer.address || '-'}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Orders ({selectedCustomerOrders.length})</h3>
+                    {selectedCustomerOrders.length === 0 ? (
+                      <p className="text-sm text-gray-500">No orders found for this customer.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {selectedCustomerOrders.map((o) => (
+                          <div key={o._id} className="flex items-center justify-between border border-gray-200 rounded-lg px-4 py-3">
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">Order #{o.orderNumber}</p>
+                              <p className="text-xs text-gray-500">{new Date(o.createdAt).toLocaleDateString()}</p>
+                              {o.products?.length > 0 && (
+                                <button
+                                  onClick={() => openProductModal(o.products[0], o)}
+                                  className="text-xs text-indigo-600 hover:underline mt-1"
+                                >
+                                  View Product: {o.products[0].name}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => openOrderModal(o)}
+                                className="block text-xs text-blue-600 hover:underline mt-1"
+                              >
+                                View Order Details
+                              </button>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-semibold text-gray-900">₹{o.totalAmount?.toLocaleString('en-IN') || 0}</p>
+                              <p className="text-xs text-gray-500 capitalize">{o.status}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Communications ({selectedCustomerComms.length})</h3>
+                    {selectedCustomerComms.length === 0 ? (
+                      <p className="text-sm text-gray-500">No communication history yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {selectedCustomerComms.map((comm) => (
+                          <div key={comm._id} className="border border-gray-200 rounded-lg px-4 py-3">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-medium text-gray-900">{comm.subject}</p>
+                              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 capitalize">{comm.status}</span>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">Type: {comm.type}</p>
+                            <p className="text-sm text-gray-700 mt-2">{comm.notes}</p>
+                            {comm.followUpDate && (
+                              <p className="text-xs text-gray-500 mt-2">Follow-up: {new Date(comm.followUpDate).toLocaleDateString()}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {showProductModal && selectedProduct && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeProductModal}>
+            <div className="w-full max-w-2xl bg-white rounded-xl border border-gray-200 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900">Product Details</h2>
+                <button onClick={closeProductModal} className="text-gray-500 hover:text-gray-700">
+                  <span className="material-icons">close</span>
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Product Name</p>
+                    <p className="font-medium text-gray-900">{selectedProduct.name || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Order Number</p>
+                    <p className="font-medium text-gray-900">#{selectedProductOrder?.orderNumber || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Unit Price</p>
+                    <p className="font-medium text-gray-900">₹{Number(selectedProduct.price || 0).toLocaleString('en-IN')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Quantity</p>
+                    <p className="font-medium text-gray-900">{selectedProduct.quantity || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Line Total</p>
+                    <p className="font-semibold text-gray-900">
+                      ₹{(Number(selectedProduct.price || 0) * Number(selectedProduct.quantity || 0)).toLocaleString('en-IN')}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Order Status</p>
+                    <p className="font-medium text-gray-900 capitalize">{selectedProductOrder?.status || '-'}</p>
+                  </div>
+                </div>
+
+                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                  <p className="text-xs text-gray-500 uppercase mb-2">Customer</p>
+                  <p className="font-medium text-gray-900">
+                    {selectedProductOrder?.customer?.firstName || '-'} {selectedProductOrder?.customer?.lastName || ''}
+                  </p>
+                </div>
+
+                <div className="flex justify-end">
+                  {selectedProductOrder && (
+                    <button
+                      onClick={() => {
+                        closeProductModal();
+                        openOrderModal(selectedProductOrder);
+                      }}
+                      className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 mr-2"
+                    >
+                      Open Order
+                    </button>
+                  )}
+                  <button onClick={closeProductModal} className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showOrderModal && selectedOrder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeOrderModal}>
+            <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-xl border border-gray-200 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900">Order Details</h2>
+                <button onClick={closeOrderModal} className="text-gray-500 hover:text-gray-700">
+                  <span className="material-icons">close</span>
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Order Number</p>
+                    <p className="font-medium text-gray-900">#{selectedOrder.orderNumber || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Total Amount</p>
+                    <p className="font-semibold text-gray-900">₹{Number(selectedOrder.totalAmount || 0).toLocaleString('en-IN')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Order Status</p>
+                    <p className="font-medium text-gray-900 capitalize">{selectedOrder.status || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Payment Status</p>
+                    <p className="font-medium text-gray-900 capitalize">{selectedOrder.paymentStatus || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Created On</p>
+                    <p className="font-medium text-gray-900">
+                      {selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleString() : '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase">Updated On</p>
+                    <p className="font-medium text-gray-900">
+                      {selectedOrder.updatedAt ? new Date(selectedOrder.updatedAt).toLocaleString() : '-'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                  <p className="text-xs text-gray-500 uppercase mb-2">Customer</p>
+                  <p className="font-medium text-gray-900">
+                    {selectedOrder.customer?.firstName || '-'} {selectedOrder.customer?.lastName || ''}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">{selectedOrder.customer?.email || '-'}</p>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Products ({selectedOrder.products?.length || 0})</h3>
+                  {!selectedOrder.products?.length ? (
+                    <p className="text-sm text-gray-500">No products available for this order.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {selectedOrder.products.map((product, index) => (
+                        <div key={`${product.name || 'product'}-${index}`} className="flex items-center justify-between border border-gray-200 rounded-lg px-4 py-3">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{product.name || '-'}</p>
+                            <p className="text-xs text-gray-500">Qty: {product.quantity || 0}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-semibold text-gray-900">₹{Number(product.price || 0).toLocaleString('en-IN')}</p>
+                            <button
+                              onClick={() => openProductModal(product, selectedOrder)}
+                              className="text-xs text-indigo-600 hover:underline mt-1"
+                            >
+                              View Product Details
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-xs text-gray-500 uppercase mb-2">Notes</p>
+                  <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 text-sm text-gray-700">
+                    {selectedOrder.notes || 'No notes added for this order.'}
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <button onClick={closeOrderModal} className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

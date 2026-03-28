@@ -38,7 +38,7 @@ export default function Login() {
       {/* Main Content */}
       <div className="flex-1 flex">
         {/* Left Side - Branding */}
-        <div className="w-1/2 bg-gradient-to-br from-gray-900 to-gray-800 text-white flex flex-col justify-center px-16">
+        <div className="w-1/2 bg-linear-to-br from-gray-900 to-gray-800 text-white flex flex-col justify-center px-16">
           <h1 className="text-5xl font-bold mb-4">Curating Enterprise Efficiency.</h1>
           <p className="text-xl text-gray-300">Manage your editorial workflow and commerce analytics in one unified, professional interface.</p>
         </div>

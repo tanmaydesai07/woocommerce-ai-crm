@@ -21,7 +21,7 @@
 
 ### Out of Scope
 - Payment processing
-- Real WooCommerce store (using mock webhooks)
+- Production-grade hardening/deployment
 - Mobile application
 - Multi-language support
 
@@ -69,11 +69,11 @@ Since we don't have a real WooCommerce store, we simulate webhooks:
 
 ## 4. Assumptions
 
-1. **WooCommerce Store:** No production store available; we use mock webhooks and simulated data
+1. **WooCommerce Store:** A test WooCommerce store is available; simulated data remains as fallback
 2. **Webhook Testing:** Built-in test interface replaces Postman for easier demo
 3. **Authentication:** Session-based authentication using express-session
 4. **Database:** MongoDB Atlas for data persistence
-5. **Frontend:** Server-rendered HTML with Tailwind CSS (no React)
+5. **Frontend:** React + Vite with Tailwind CSS
 6. **Users:** Two roles - Admin (full access) and User (limited access)
 
 ---
@@ -84,7 +84,7 @@ Since we don't have a real WooCommerce store, we simulate webhooks:
 |-----------|------------|
 | Backend | Express.js (Node.js) |
 | Database | MongoDB Atlas |
-| Frontend | HTML + Tailwind CSS (CDN) |
+| Frontend | React + Vite + Tailwind CSS |
 | HTTP Client | Axios |
 | WooCommerce API | @woocommerce/woocommerce-rest-api |
 | Webhooks | Built-in Express endpoints |
@@ -206,7 +206,7 @@ Since we don't have a real WooCommerce store, we simulate webhooks:
 |-------|------|-------|
 | Planning | 0:00 - 0:30 | Research, define scope, record video |
 | Backend | 0:30 - 1:30 | Models, routes, WooCommerce integration |
-| Frontend | 1:30 - 2:30 | HTML pages, Tailwind styling |
+| Frontend | 1:30 - 2:30 | React pages/components, Tailwind styling |
 | Testing | 2:30 - 3:00 | Fix bugs, test features |
 | Documentation | 3:00 - 3:30 | README, code comments |
 | Submission | 3:30 - 4:00 | Final video, form submission |
@@ -220,7 +220,7 @@ Since we don't have a real WooCommerce store, we simulate webhooks:
 | No WooCommerce store | Simulate WooCommerce data for demo |
 | No real webhooks | Mock webhook test interface (same code structure) |
 | 4-hour time limit | Use pre-built Express template |
-| No React experience | Use vanilla HTML/JS with Tailwind CDN |
+| Limited time for UI polish | Prioritize core flows first, then iterative UX polish |
 | Real API integration | Fallback to simulated data with same structure |
 | Real-time updates | Webhook endpoints with mock testing |
 
