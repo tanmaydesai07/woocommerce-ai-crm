@@ -15,6 +15,12 @@ export default function Dashboard() {
   const [communications, setCommunications] = useState([]);
   const [wooStatus, setWooStatus] = useState(null);
   const [syncMessage, setSyncMessage] = useState('');
+  const [showCustomerForm, setShowCustomerForm] = useState(false);
+  const [showOrderForm, setShowOrderForm] = useState(false);
+  const [showCommForm, setShowCommForm] = useState(false);
+  const [customerForm, setCustomerForm] = useState({ firstName: '', lastName: '', email: '', phone: '', company: '', address: '', status: 'lead' });
+  const [orderForm, setOrderForm] = useState({ customer: '', orderNumber: '', totalAmount: '', status: 'pending', paymentStatus: 'pending', notes: '' });
+  const [commForm, setCommForm] = useState({ customer: '', type: 'call', subject: '', notes: '', status: 'open' });
 
   useEffect(() => {
     init();
@@ -98,6 +104,45 @@ export default function Dashboard() {
     await axios.delete(`/api/customers/${id}`);
     loadCustomers();
     loadStats();
+  }
+
+  async function addCustomer(e) {
+    e.preventDefault();
+    try {
+      await axios.post('/api/customers', customerForm);
+      setCustomerForm({ firstName: '', lastName: '', email: '', phone: '', company: '', address: '', status: 'lead' });
+      setShowCustomerForm(false);
+      loadCustomers();
+      loadStats();
+    } catch (err) {
+      alert('Error adding customer');
+    }
+  }
+
+  async function addOrder(e) {
+    e.preventDefault();
+    try {
+      await axios.post('/api/orders', orderForm);
+      setOrderForm({ customer: '', orderNumber: '', totalAmount: '', status: 'pending', paymentStatus: 'pending', notes: '' });
+      setShowOrderForm(false);
+      loadOrders();
+      loadStats();
+    } catch (err) {
+      alert('Error adding order');
+    }
+  }
+
+  async function addCommunication(e) {
+    e.preventDefault();
+    try {
+      await axios.post('/api/communications', commForm);
+      setCommForm({ customer: '', type: 'call', subject: '', notes: '', status: 'open' });
+      setShowCommForm(false);
+      loadCommunications();
+      loadStats();
+    } catch (err) {
+      alert('Error adding communication');
+    }
   }
 
   async function updateOrderStatus(id, status) {
@@ -281,11 +326,40 @@ export default function Dashboard() {
                   <span className="material-icons text-sm">ios_share</span>
                   Export CSV
                 </button>
-                <button onClick={syncCustomers} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                <button onClick={() => setShowCustomerForm(!showCustomerForm)} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                  <span className="material-icons text-sm">person_add</span>
+                  Add Customer
+                </button>
+                <button onClick={syncCustomers} className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
                   <span className="material-icons text-sm">sync</span>
                   Sync WooCommerce
                 </button>
               </div>
+
+              {/* Add Customer Form */}
+              {showCustomerForm && role === 'admin' && (
+                <form onSubmit={addCustomer} className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
+                  <h3 className="font-semibold text-gray-900 mb-4">Add New Customer</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <input type="text" placeholder="First Name" value={customerForm.firstName} onChange={e => setCustomerForm({...customerForm, firstName: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg" required />
+                    <input type="text" placeholder="Last Name" value={customerForm.lastName} onChange={e => setCustomerForm({...customerForm, lastName: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg" required />
+                    <input type="email" placeholder="Email" value={customerForm.email} onChange={e => setCustomerForm({...customerForm, email: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg" required />
+                    <input type="text" placeholder="Phone" value={customerForm.phone} onChange={e => setCustomerForm({...customerForm, phone: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg" />
+                    <input type="text" placeholder="Company" value={customerForm.company} onChange={e => setCustomerForm({...customerForm, company: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg" />
+                    <input type="text" placeholder="Address" value={customerForm.address} onChange={e => setCustomerForm({...customerForm, address: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg" />
+                    <select value={customerForm.status} onChange={e => setCustomerForm({...customerForm, status: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg">
+                      <option value="lead">Lead</option>
+                      <option value="prospect">Prospect</option>
+                      <option value="customer">Customer</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-3 mt-4">
+                    <button type="submit" className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">Save Customer</button>
+                    <button type="button" onClick={() => setShowCustomerForm(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                  </div>
+                </form>
+              )}
 
               {/* Filters */}
               <div className="flex gap-4 mb-6">
@@ -384,6 +458,44 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {/* Add Order Button */}
+              <div className="flex gap-3 mb-6">
+                <button onClick={() => setShowOrderForm(!showOrderForm)} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                  <span className="material-icons text-sm">add_shopping_cart</span>
+                  New Order
+                </button>
+              </div>
+
+              {/* Add Order Form */}
+              {showOrderForm && role === 'admin' && (
+                <form onSubmit={addOrder} className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
+                  <h3 className="font-semibold text-gray-900 mb-4">Create New Order</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <select value={orderForm.customer} onChange={e => setOrderForm({...orderForm, customer: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg" required>
+                      <option value="">Select Customer</option>
+                      {customers.map(c => <option key={c._id} value={c._id}>{c.firstName} {c.lastName}</option>)}
+                    </select>
+                    <input type="text" placeholder="Order Number" value={orderForm.orderNumber} onChange={e => setOrderForm({...orderForm, orderNumber: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg" required />
+                    <input type="number" placeholder="Total Amount (₹)" value={orderForm.totalAmount} onChange={e => setOrderForm({...orderForm, totalAmount: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg" required />
+                    <select value={orderForm.status} onChange={e => setOrderForm({...orderForm, status: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg">
+                      <option value="pending">Pending</option>
+                      <option value="processing">Processing</option>
+                      <option value="shipped">Shipped</option>
+                      <option value="delivered">Delivered</option>
+                    </select>
+                    <select value={orderForm.paymentStatus} onChange={e => setOrderForm({...orderForm, paymentStatus: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg">
+                      <option value="pending">Payment Pending</option>
+                      <option value="paid">Paid</option>
+                    </select>
+                    <textarea placeholder="Notes" value={orderForm.notes} onChange={e => setOrderForm({...orderForm, notes: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg col-span-2" />
+                  </div>
+                  <div className="flex gap-3 mt-4">
+                    <button type="submit" className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">Create Order</button>
+                    <button type="button" onClick={() => setShowOrderForm(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                  </div>
+                </form>
+              )}
+
               {/* Order Columns */}
               <div className="grid grid-cols-4 gap-4">
                 {['pending', 'processing', 'shipped', 'delivered'].map(status => (
@@ -450,6 +562,46 @@ export default function Dashboard() {
                   <p className="text-2xl font-bold text-gray-900">{communications.filter(c => c.status === 'closed').length}</p>
                 </div>
               </div>
+
+              {/* Add Communication Button */}
+              <div className="flex gap-3 mb-6">
+                <button onClick={() => setShowCommForm(!showCommForm)} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                  <span className="material-icons text-sm">add</span>
+                  Log Communication
+                </button>
+              </div>
+
+              {/* Add Communication Form */}
+              {showCommForm && (
+                <form onSubmit={addCommunication} className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
+                  <h3 className="font-semibold text-gray-900 mb-4">Log New Communication</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <select value={commForm.customer} onChange={e => setCommForm({...commForm, customer: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg" required>
+                      <option value="">Select Customer</option>
+                      {customers.map(c => <option key={c._id} value={c._id}>{c.firstName} {c.lastName}</option>)}
+                    </select>
+                    <select value={commForm.type} onChange={e => setCommForm({...commForm, type: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg">
+                      <option value="call">Call</option>
+                      <option value="email">Email</option>
+                      <option value="meeting">Meeting</option>
+                      <option value="note">Note</option>
+                      <option value="support">Support</option>
+                    </select>
+                    <input type="text" placeholder="Subject" value={commForm.subject} onChange={e => setCommForm({...commForm, subject: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg col-span-2" required />
+                    <textarea placeholder="Notes / Details" value={commForm.notes} onChange={e => setCommForm({...commForm, notes: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg col-span-2" required />
+                    <select value={commForm.status} onChange={e => setCommForm({...commForm, status: e.target.value})} className="px-4 py-2 border border-gray-300 rounded-lg">
+                      <option value="open">Open</option>
+                      <option value="follow-up">Follow-up</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-3 mt-4">
+                    <button type="submit" className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">Save Communication</button>
+                    <button type="button" onClick={() => setShowCommForm(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                  </div>
+                </form>
+              )}
 
               {/* Communications List */}
               <div className="bg-white rounded-xl border border-gray-200">

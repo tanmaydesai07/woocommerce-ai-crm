@@ -13,7 +13,7 @@ const app = express();
 app.use(express.json());
 // No static file serving - React handles frontend
 app.use(session({
-  secret: 'crm-hackathon-secret',
+  secret: process.env.SESSION_SECRET || 'crm-hackathon-secret',
   resave: false,
   saveUninitialized: false
 }));
@@ -53,11 +53,12 @@ function auth(req, res, next) {
 
 app.post('/api/signup', async (req, res) => {
   try {
-    const { username, password, role } = req.body;
+    const { username, password } = req.body;
     const existing = await User.findOne({ username });
     if (existing) return res.status(400).json({ error: 'Username taken' });
-    const user = await User.create({ username, password, role: role || 'user' });
+    const user = await User.create({ username, password, role: 'user' });
     req.session.userId = user._id;
+    req.session.username = user.username;
     req.session.role = user.role;
     res.json({ username: user.username, role: user.role });
   } catch (e) {
@@ -71,6 +72,7 @@ app.post('/api/login', async (req, res) => {
     const user = await User.findOne({ username, password });
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
     req.session.userId = user._id;
+    req.session.username = user.username;
     req.session.role = user.role;
     res.json({ username: user.username, role: user.role });
   } catch (e) {
@@ -437,6 +439,160 @@ app.get('/api/stats', auth, async (req, res) => {
       customersByStatus,
       ordersByStatus
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ==================== WEBHOOKS (Real-time Push) ====================
+
+// Webhook for order updates from WooCommerce
+app.post('/api/webhooks/order', async (req, res) => {
+  try {
+    const { id, status, customer_id, total, line_items, customer_note } = req.body;
+    
+    // Find or create customer
+    let customer = await Customer.findOne({ wooCustomerId: String(customer_id) });
+    if (!customer && customer_id) {
+      customer = await Customer.create({
+        wooCustomerId: String(customer_id),
+        firstName: 'Webhook',
+        lastName: 'Customer',
+        email: `webhook-${customer_id}@woo.com`,
+        status: 'customer',
+        createdBy: 'webhook'
+      });
+    }
+
+    // Map WooCommerce status to our status
+    const statusMap = {
+      'pending': 'pending',
+      'processing': 'processing',
+      'on-hold': 'pending',
+      'completed': 'delivered',
+      'cancelled': 'cancelled'
+    };
+
+    // Find or create order
+    const existingOrder = await Order.findOne({ wooOrderId: String(id) });
+    if (existingOrder) {
+      existingOrder.status = statusMap[status] || 'pending';
+      existingOrder.notes = customer_note || existingOrder.notes;
+      await existingOrder.save();
+    } else if (customer) {
+      await Order.create({
+        wooOrderId: String(id),
+        customer: customer._id,
+        orderNumber: String(id),
+        products: (line_items || []).map(item => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: parseFloat(item.total) || 0
+        })),
+        totalAmount: parseFloat(total) || 0,
+        status: statusMap[status] || 'pending',
+        paymentStatus: status === 'completed' ? 'paid' : 'pending',
+        notes: customer_note || '',
+        createdBy: 'webhook'
+      });
+    }
+
+    console.log(`Webhook received: Order ${id} - ${status}`);
+    res.json({ success: true, message: 'Webhook processed' });
+  } catch (e) {
+    console.error('Webhook error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Webhook for customer updates from WooCommerce
+app.post('/api/webhooks/customer', async (req, res) => {
+  try {
+    const { id, first_name, last_name, email, billing } = req.body;
+    
+    const existingCustomer = await Customer.findOne({ wooCustomerId: String(id) });
+    if (existingCustomer) {
+      existingCustomer.firstName = first_name || existingCustomer.firstName;
+      existingCustomer.lastName = last_name || existingCustomer.lastName;
+      existingCustomer.email = email || existingCustomer.email;
+      existingCustomer.phone = billing?.phone || existingCustomer.phone;
+      existingCustomer.company = billing?.company || existingCustomer.company;
+      existingCustomer.address = billing?.address_1 || existingCustomer.address;
+      await existingCustomer.save();
+    } else {
+      await Customer.create({
+        wooCustomerId: String(id),
+        firstName: first_name || 'Unknown',
+        lastName: last_name || 'Customer',
+        email: email || `webhook-${id}@woo.com`,
+        phone: billing?.phone || '',
+        company: billing?.company || '',
+        address: billing?.address_1 || '',
+        status: 'customer',
+        createdBy: 'webhook'
+      });
+    }
+
+    console.log(`Webhook received: Customer ${id} - ${first_name} ${last_name}`);
+    res.json({ success: true, message: 'Webhook processed' });
+  } catch (e) {
+    console.error('Webhook error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Mock webhook test endpoint (for demo)
+app.post('/api/webhooks/test', auth, async (req, res) => {
+  try {
+    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    
+    const { type } = req.body;
+    
+    if (type === 'order') {
+      // Simulate WooCommerce order webhook
+      const testCustomer = await Customer.findOne();
+      const mockOrder = {
+        id: 'WC-' + Date.now(),
+        status: 'processing',
+        customer_id: testCustomer?.wooCustomerId || 'WC-2001',
+        total: '4999.00',
+        line_items: [{ name: 'Webhook Test Product', quantity: 1, total: '4999.00' }],
+        customer_note: 'Test order from webhook'
+      };
+      
+      // Process as if real webhook
+      const customer = await Customer.findOne({ wooCustomerId: mockOrder.customer_id });
+      if (customer) {
+        await Order.create({
+          wooOrderId: mockOrder.id,
+          customer: customer._id,
+          orderNumber: mockOrder.id,
+          products: [{ name: 'Webhook Test Product', quantity: 1, price: 4999 }],
+          totalAmount: 4999,
+          status: 'processing',
+          paymentStatus: 'paid',
+          notes: 'Created via webhook test',
+          createdBy: 'webhook-test'
+        });
+      }
+      res.json({ success: true, message: 'Test order webhook processed' });
+    } else if (type === 'customer') {
+      // Simulate WooCommerce customer webhook
+      await Customer.create({
+        wooCustomerId: 'WC-' + Date.now(),
+        firstName: 'Webhook',
+        lastName: 'Test Customer',
+        email: `webhook-${Date.now()}@test.com`,
+        phone: '9999999999',
+        company: 'Test Company',
+        address: 'Webhook Test Address',
+        status: 'lead',
+        createdBy: 'webhook-test'
+      });
+      res.json({ success: true, message: 'Test customer webhook processed' });
+    } else {
+      res.status(400).json({ error: 'Invalid type. Use "order" or "customer"' });
+    }
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
